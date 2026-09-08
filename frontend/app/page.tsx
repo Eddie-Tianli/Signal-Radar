@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 type ApiStatus = {
   name: string;
@@ -72,6 +73,9 @@ export default function Home() {
           <p className="text-slate-600">Backend: loading...</p>
         )}
       </div>
+      <Link href="/topics" className="rounded-lg bg-slate-900 px-5 py-3 text-white hover:bg-slate-700">
+        Manage Topics
+      </Link>
     </main>
   );
 }
