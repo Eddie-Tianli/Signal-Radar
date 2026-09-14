@@ -14,6 +14,10 @@ from app.items.schemas import Item
 from app.topics.models import TopicRecord
 from app.items.schemas import ItemCreate
 from app.items.service import ItemService
+from app.collection.mock import MockSource
+from app.collection.service import CollectionService
+from app.ai.service import AnalysisService
+from app.ai.schemas import AnalysisResult
 
 
 @pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Set RUN_POSTGRES_TESTS=1 after migrating local PostgreSQL")
@@ -82,5 +86,36 @@ def test_postgresql_scan_insert_conflicts():
                 assert service.insert_if_new(data) is False
                 session.commit()
                 assert len(service.list_recent_topic_items(topic.id)) == 1
+        finally:
+            transaction.rollback()
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Opt-in local PostgreSQL check")
+def test_postgresql_mock_scan():
+    with get_engine().connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(connection, join_transaction_mode="create_savepoint") as session:
+                topic = TopicRecord(name=f"Mock integration {uuid4()}")
+                session.add(topic)
+                session.flush()
+                service = CollectionService(session, MockSource())
+                first = service.scan(topic.id)
+                second = service.scan(topic.id)
+                assert (first.source, first.fetched, first.created, first.duplicates) == ("mock", 3, 3, 0)
+                assert (second.fetched, second.created, second.duplicates) == (3, 0, 3)
+                assert len(ItemService(session).list_recent_topic_items(topic.id)) == 3
+                class FakeAI:
+                    def analyze(self, data):
+                        return AnalysisResult(relevant=False, relevance_score=0.1,
+                                              category="other", summary="Mock summary.")
+                item_id = ItemService(session).list_recent_topic_items(topic.id)[0].id
+                analyzed = AnalysisService(session, FakeAI()).analyze(item_id)
+                assert analyzed.ai_relevant is False
+                assert analyzed.ai_analyzed_at.utcoffset() is not None
+                session.expire_all()
+                assert session.get(ItemRecord, item_id).ai_summary == "Mock summary."
+                with pytest.raises(IntegrityError):
+                    with session.begin_nested():
+                        session.get(ItemRecord, item_id).ai_relevance_score = 1.5
+                        session.flush()
         finally:
             transaction.rollback()

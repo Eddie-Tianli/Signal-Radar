@@ -3,7 +3,8 @@
 ## Implemented storage
 
 PostgreSQL stores Topics and Items through SQLAlchemy. Alembic revision `0001`
-creates Topics; `0002_create_items.py` creates Items. Current head is `0002`.
+creates Topics; `0002_create_items.py` creates Items. `0003_item_ai_analysis.py`
+adds nullable AI analysis fields. Current head is `0003`.
 Previously applied migration files are preserved unchanged.
 
 ## Topics
@@ -35,6 +36,11 @@ A Topic owns multiple Items; every Item references one existing Topic.
 | published_at | timestamp with time zone | Nullable; input requires timezone |
 | snippet | text | Nullable |
 | collected_at | timestamp with time zone | NOT NULL; database-generated current time |
+| ai_relevant | boolean | Nullable until analyzed |
+| ai_relevance_score | double precision | Nullable; CHECK between 0 and 1 |
+| ai_category | varchar(50) | Nullable; short category |
+| ai_summary | text | Nullable; short AI summary |
+| ai_analyzed_at | timestamp with time zone | Nullable; successful analysis time |
 
 `fk_items_topic_id_topics` rejects missing Topic references and uses ON DELETE
 CASCADE. `TopicRecord.items` and `ItemRecord.topic` use back_populates; passive
@@ -52,7 +58,9 @@ need feed identity included. This is not semantic deduplication.
 
 Blank-string rules are applied by Pydantic and ItemService. Raw SQL bypasses these
 application rules, although database NOT NULL, foreign key, and unique constraints
-still apply. No AI or source-specific fields are included.
+still apply. `ck_items_ai_score` enforces the score range. Existing rows keep null
+AI fields until analyzed. No source-specific columns are included. Downgrading
+0003 removes analysis fields/results, while retaining the original Items.
 
 ## Migration and verification
 

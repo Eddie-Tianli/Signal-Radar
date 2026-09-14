@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
-from app.collection.youtube import YouTubeSource, get_youtube_source
+from app.collection.youtube import YouTubeSource
+from app.collection.provider import get_source
 from app.database import get_session
 from app.main import app
 from test_youtube import video
@@ -33,13 +34,13 @@ def scan_client(tmp_path):
         return httpx.Response(state["status"], json={"items": state["items"]})
     with httpx.Client(transport=httpx.MockTransport(handler)) as upstream:
         app.dependency_overrides[get_session] = sessions
-        app.dependency_overrides[get_youtube_source] = lambda: YouTubeSource(upstream, state["key"])
+        app.dependency_overrides[get_source] = lambda: YouTubeSource(upstream, state["key"])
         try:
             with TestClient(app) as client:
                 yield client, state
         finally:
             app.dependency_overrides.pop(get_session, None)
-            app.dependency_overrides.pop(get_youtube_source, None)
+            app.dependency_overrides.pop(get_source, None)
             engine.dispose()
 
 

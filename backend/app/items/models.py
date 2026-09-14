@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, Float, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -11,6 +11,7 @@ class ItemRecord(Base):
     __tablename__ = "items"
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="uq_items_source_external_id"),
+        CheckConstraint("ai_relevance_score >= 0 AND ai_relevance_score <= 1", name="ck_items_ai_score"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -31,3 +32,8 @@ class ItemRecord(Base):
     )
 
     topic: Mapped[TopicRecord] = relationship(back_populates="items")
+    ai_relevant: Mapped[bool | None] = mapped_column(Boolean)
+    ai_relevance_score: Mapped[float | None] = mapped_column(Float)
+    ai_category: Mapped[str | None] = mapped_column(String(50))
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    ai_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -35,3 +35,8 @@ class Item(BaseModel):
     published_at: datetime | None
     snippet: str | None
     collected_at: datetime
+    ai_relevant: bool | None = None
+    ai_relevance_score: float | None = None
+    ai_category: str | None = None
+    ai_summary: str | None = None
+    ai_analyzed_at: datetime | None = None

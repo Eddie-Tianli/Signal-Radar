@@ -34,5 +34,5 @@ class CollectionService:
         except Exception:
             self.session.rollback()
             raise
-        return ScanResult(topic_id=topic_id, source="youtube", fetched=len(results),
+        return ScanResult(topic_id=topic_id, source=self.source.name, fetched=len(results),
                           created=created, duplicates=len(results) - created)

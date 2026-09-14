@@ -1,4 +1,5 @@
 import type { Topic } from "./api";
+import TopicContent from "./TopicContent";
 
 type Props = {
   topics: Topic[];
@@ -27,6 +28,7 @@ export default function TopicList({ topics, busy, onEdit, onDelete }: Props) {
             <button disabled={busy} onClick={() => onDelete(topic)} aria-label={`Delete ${topic.name}`}
               className="rounded-lg border border-red-200 px-3 py-1.5 text-red-700 disabled:opacity-50">Delete</button>
           </div>
+          <TopicContent topicId={topic.id} />
         </li>
       ))}
     </ul>

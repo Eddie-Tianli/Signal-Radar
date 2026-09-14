@@ -45,5 +45,27 @@ used directly, without a Google SDK. Offline tests use HTTPX MockTransport and a
 fake key; local PostgreSQL tests use rollback-only test data and no YouTube calls.
 A real YouTube smoke test requires a user-configured key and is manual.
 
-No RSS, Web Search, AI, embeddings, semantic deduplication, clustering, Digest,
+No RSS, Web Search, embeddings, semantic deduplication, clustering, Digest,
 scheduling, crawling, notifications, or new frontend page is implemented.
+
+## Local Item analysis
+
+```text
+Item → AIProvider → OllamaProvider → DeepSeek 8B (configured local model)
+     → Structured Analysis → PostgreSQL
+```
+
+AIProvider accepts Topic name/description and Item title/snippet/author/source.
+OllamaProvider sends these as untrusted metadata to local /api/chat, with a Pydantic
+JSON schema in format, stream=false and temperature=0. No full text or external
+URLs are fetched. OLLAMA_MODEL selects the installed model; no model is hardcoded.
+The HTTP client disables proxies and redirects and accepts only loopback HTTP URLs.
+There is a 120-second request timeout and no automatic retry.
+
+AnalysisService validates and saves results and a timezone-aware analysis timestamp.
+Single-Item analysis may replace an earlier result; failed attempts retain previous
+results. Topic batch analysis selects at most 10 unanalyzed Items, processes them
+sequentially, and commits each success. Provider failures leave Items eligible for
+retry. There is no background execution or concurrency coordination. Analysis is
+model-generated judgment based only on metadata, not verified facts. The prompt
+requests 1-3 sentences; validation enforces nonempty text up to 1000 characters.

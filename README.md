@@ -8,7 +8,7 @@ SignalRadar collects publicly available information based on user-defined topics
 
 ## Current Status
 
-Early development. The first Topic Management workflow is implemented.
+Early development. Topic Management and manual YouTube collection are implemented.
 
 Completed:
 
@@ -17,18 +17,25 @@ Completed:
 - Frontend-to-backend status request at `/api/status`.
 - Topic CRUD API at `/api/topics` with Pydantic validation and automated tests.
 - Topic management page at `/topics`, including creation, editing, deletion, loading states, and error handling.
+- Per-Topic YouTube Scan button with fetched/new/duplicate counts and automatic Item list refresh.
+- Collected Item display with source, author, publication time, snippet, and original links.
 
-Topic storage now uses SQLAlchemy and local PostgreSQL. Configure the database account and apply the Alembic migration before using Topic APIs; see [backend setup](backend/README.md). Live PostgreSQL CRUD and persistence across backend process restarts have been verified. Information collection, search, AI, and authentication are not implemented.
+Topic and Item storage use SQLAlchemy and local PostgreSQL. Configure the database account and apply the Alembic migrations before using Topic APIs; see [backend setup](backend/README.md). Manual collection requires `YOUTUBE_API_KEY` in the backend environment. AI and authentication are not implemented.
 
 The API metadata version remains `0.0.1`; the changelog tracks development milestones separately.
 
-Next product stage: **Content Collection** — Topic-triggered collection, unified
-Item normalization, and support for multiple future Sources. The design documents
-use a Topic + PostgreSQL baseline and mark these designs as Planned; they are not
-a live inventory of existing repository code. AI has not started. No YouTube, RSS,
-or Web Search integration is claimed as complete.
+Content Collection currently supports manual YouTube searches normalized into Items.
+RSS, Web Search, AI, Scheduler, and Digest remain unimplemented.
 
 ## Local Development
+
+For offline collection testing, set `USE_MOCK_SOURCE=true` in `backend/.env` and
+restart the backend. No YouTube key is required in this mode. MockSource is only
+for local development/tests: it generates three deterministic simulated Items per
+query, with local placeholder links. Scan twice to see 3 new Items followed by 3
+duplicates. Existing Items remain visible. The default `false` keeps YouTube;
+switching back requires a YouTube key and network access. See
+[local testing instructions](docs/development/local-development).
 
 Run the backend in one PowerShell terminal:
 
@@ -52,6 +59,12 @@ npm run dev
 ```
 
 Open http://localhost:3000 and select **Manage Topics**, or visit http://localhost:3000/topics directly. Backend documentation is available at http://127.0.0.1:8000/docs.
+
+Use **View items** on a Topic to read saved content without scanning. **Scan** calls
+the YouTube collection API, displays Fetched / New / Duplicates, and refreshes that
+Topic's Items. **Refresh items** reloads saved content. Scans use real YouTube API
+quota; loading and failure messages appear within the Topic. Original links open
+in a new tab.
 
 Run `python -m pytest -q` from `backend/` with the virtual environment activated. Run `npm run lint` and `npm run build` from `frontend/`.
 

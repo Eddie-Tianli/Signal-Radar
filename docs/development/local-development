@@ -15,6 +15,9 @@ uvicorn app.main:app --reload
 
 ## YouTube API key
 
+For local-only testing use the MockSource instructions below instead of configuring
+or calling YouTube.
+
 1. Create/select a Google Cloud project and enable YouTube Data API v3.
 2. Create an API key and restrict its API access to YouTube Data API v3. Choose
    application restrictions appropriate for a backend; browser-referrer-only keys
@@ -61,7 +64,66 @@ python -m pytest tests/test_items_postgresql.py -q -p no:cacheprovider
 Remove-Item Env:\RUN_POSTGRES_TESTS
 ```
 
-## Frontend
+## Local Ollama Item analysis
+
+1. Start the Ollama desktop service, or run `ollama serve` if it is not running.
+2. Run `ollama list` to find the exact installed DeepSeek 8B tag. Verify service
+   availability with `Invoke-RestMethod http://localhost:11434/api/tags`.
+3. In backend/.env set OLLAMA_BASE_URL=http://localhost:11434 and OLLAMA_MODEL to
+   that exact tag. Set USE_MOCK_SOURCE=true to avoid real source calls. No model
+   is downloaded automatically. Restart backend after configuration changes.
+4. From backend with its virtual environment activated, run:
+   `python -m alembic upgrade head`, then `python -m alembic current` (0003 head),
+   then `uvicorn app.main:app --reload`.
+5. In /docs create/scan a Mock Topic and GET /api/topics/{id}/items to obtain an ID.
+6. POST /api/items/{item_id}/analyze. Inspect ai_relevant, ai_relevance_score,
+   ai_category, ai_summary and ai_analyzed_at in its response and the Items GET.
+7. Optionally POST /api/topics/{id}/analyze?limit=1 to analyze another unprocessed
+   Item. Start small: local models may be slow. Single calls time out at 120 seconds.
+8. Inspect stored results in pgAdmin with:
+   `SELECT id, ai_relevant, ai_relevance_score, ai_category, ai_summary, ai_analyzed_at FROM items;`
+
+Automated AI tests use FakeAI and httpx.MockTransport; they never invoke real
+Ollama. Existing test commands also cover schema validation, migration and failure
+paths. Optional PostgreSQL checks validate AI field persistence and score constraints.
+No AI frontend controls have been added; use Swagger for this stage.
+Structured output reference: https://docs.ollama.com/capabilities/structured-outputs
+
+## Frontend usage
 
 In another terminal, run npm run dev from frontend/. Topic management remains at
-http://localhost:3000/topics. This stage adds no collection UI; use Swagger.
+http://localhost:3000/topics. Use Scan to collect and View items / Refresh items
+to read saved results.
+
+## Offline MockSource (development and tests only)
+
+Set `USE_MOCK_SOURCE=true` in backend/.env and restart the backend, or set
+`$env:USE_MOCK_SOURCE = 'true'` in its PowerShell terminal before starting uvicorn.
+Process environment variables take precedence over .env. No YouTube key is needed.
+Unset/default or false uses the existing YouTube source. To switch back, set false
+in the active configuration and restart. MockSource is not a real information source.
+
+1. Start local PostgreSQL and the backend, then run npm run dev in frontend/.
+2. Create a Topic named Christopher Nolan (use a new name for a clean test).
+3. Click Scan: expect source=mock, fetched=3, created=3, duplicates=0 in the response.
+4. The Topic automatically displays three simulated Items with mock source labels.
+5. Scan again: expect fetched=3, created=0, duplicates=3.
+6. Refresh or restart the backend: the saved Items remain available.
+
+IDs derive from a normalized query and fixture index, so repeated scans are stable.
+The existing global (source, external_id) constraint also deduplicates across Topics
+with the same query; an already scanned query may therefore return duplicates on
+the first scan of a new Topic. No schema change is needed. Published dates are fixed
+fixtures; links point to localhost placeholders, not genuine articles.
+
+MockSource creates data in memory without an HTTP client. The frontend calls only
+the local backend; the backend connects to local PostgreSQL. In browser DevTools,
+inspect Scan and Items requests: their destination is 127.0.0.1:8000. External links
+are not loaded automatically. Mock tests reject non-loopback socket connections and
+fail if YouTubeSource.search is invoked. PostgreSQL integration tests roll back rows.
+
+```powershell
+$env:RUN_POSTGRES_TESTS = '1'
+python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-mock-tests-$([guid]::NewGuid().ToString('N'))"
+Remove-Item Env:\RUN_POSTGRES_TESTS
+```

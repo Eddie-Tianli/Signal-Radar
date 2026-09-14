@@ -17,6 +17,8 @@ class SourceError(Exception):
 
 
 class YouTubeSource(SourceAdapter):
+    name = "youtube"
+
     def __init__(self, client: httpx.Client, api_key: str):
         self.client = client
         self.api_key = api_key.strip()

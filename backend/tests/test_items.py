@@ -112,7 +112,7 @@ def test_topic_deletion_cascades(engine):
 def test_migration_head_and_downgrade_preserve_topics(engine):
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003"
         assert "items" in inspect(connection).get_table_names()
         assert connection.scalar(text("SELECT name FROM topics WHERE id=1")) == "Existing topic"
         config.attributes["connection"] = connection

@@ -5,7 +5,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.collection.service import CollectionService, ScanResult
-from app.collection.youtube import SourceError, YouTubeSource, get_youtube_source
+from app.collection.youtube import SourceError
+from app.collection.source import SourceAdapter
+from app.collection.provider import get_source
 from app.database import get_session
 from app.items.schemas import Item
 from app.items.service import ItemService
@@ -17,7 +19,7 @@ DatabaseSession = Annotated[Session, Depends(get_session)]
 
 @router.post("/{topic_id}/scan", response_model=ScanResult)
 def scan_topic(topic_id: int, session: DatabaseSession,
-               source: Annotated[YouTubeSource, Depends(get_youtube_source)]) -> ScanResult:
+               source: Annotated[SourceAdapter, Depends(get_source)]) -> ScanResult:
     try:
         return CollectionService(session, source).scan(topic_id)
     except LookupError:

@@ -15,6 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Local AIProvider/OllamaProvider structured Item relevance and short-summary analysis, configured through environment variables.
+- Migration 0003 with nullable AI result fields and database score-range constraint.
+- Single-Item analysis and bounded sequential Topic analysis APIs, plus mocked provider/error tests and PostgreSQL persistence checks.
+- Local/test-only MockSource selected by USE_MOCK_SOURCE=true, with deterministic normalized Items and repeat-scan deduplication; YouTube remains the default.
+- Offline MockSource/API tests and a rollback-isolated local PostgreSQL scan check.
+- Topic frontend manual Scan action with independent loading/error states and fetched/new/duplicate counts.
+- Collected Item lists with empty/error states, safe original links, and automatic refresh after a successful scan.
+
 - YouTubeSource using one official Data API v3 search.list request, normalized into Items, with environment-based API key and sanitized errors.
 - Synchronous Topic scan API with atomic identity deduplication and fetched/created/duplicates counts, plus Topic Item reads ordered by collection time.
 - Mocked YouTube HTTP/API tests and an opt-in PostgreSQL insert-conflict check; no real quota is consumed by automated tests.
