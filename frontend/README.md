@@ -11,7 +11,9 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. The homepage displays SignalRadar, Personal Information Intelligence Platform, and Frontend running.
+Start the FastAPI backend at http://127.0.0.1:8000, then open http://localhost:3000. The homepage displays the backend status and API version.
+
+Select **Manage Topics** or open http://localhost:3000/topics to view, create, edit, and delete topics. The page reports loading and request errors. Topic storage requires the PostgreSQL setup and migration described in [the backend README](../backend/README.md).
 
 Checks:
 

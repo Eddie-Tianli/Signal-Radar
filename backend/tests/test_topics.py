@@ -1,19 +1,34 @@
 import pytest
 from fastapi.testclient import TestClient
+from pathlib import Path
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from app.main import app
-from app.topics.service import TopicService, get_topic_service
+from app.database import get_session
 
 
 @pytest.fixture
-def client():
-    service = TopicService()
-    app.dependency_overrides[get_topic_service] = lambda: service
+def client(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'topics.db'}", connect_args={"check_same_thread": False})
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+
+    def test_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = test_session
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
-        app.dependency_overrides.pop(get_topic_service, None)
+        app.dependency_overrides.pop(get_session, None)
+        engine.dispose()
 
 
 def test_create_topic(client):

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 
 class TopicWrite(BaseModel):
@@ -12,4 +12,6 @@ class TopicWrite(BaseModel):
 
 
 class Topic(TopicWrite):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int

@@ -1,46 +1,53 @@
-from threading import Lock
+from typing import Annotated
 
+from fastapi import Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.database import get_session
+from app.topics.models import TopicRecord
 from app.topics.schemas import Topic, TopicWrite
 
 
 class TopicService:
-    """Process-local storage; restarting the server discards all topics."""
+    """Topic operations using a request-scoped database session."""
 
-    def __init__(self) -> None:
-        self._topics: dict[int, Topic] = {}
-        self._next_id = 1
-        self._lock = Lock()
+    def __init__(self, session: Session) -> None:
+        self.session = session
 
     def list_topics(self) -> list[Topic]:
-        with self._lock:
-            return list(self._topics.values())
+        records = self.session.scalars(select(TopicRecord).order_by(TopicRecord.id)).all()
+        return [Topic.model_validate(record) for record in records]
 
     def get_topic(self, topic_id: int) -> Topic | None:
-        with self._lock:
-            return self._topics.get(topic_id)
+        record = self.session.get(TopicRecord, topic_id)
+        return Topic.model_validate(record) if record is not None else None
 
     def create_topic(self, data: TopicWrite) -> Topic:
-        with self._lock:
-            topic = Topic(id=self._next_id, **data.model_dump())
-            self._topics[topic.id] = topic
-            self._next_id += 1
-            return topic
+        record = TopicRecord(**data.model_dump())
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+        return Topic.model_validate(record)
 
     def update_topic(self, topic_id: int, data: TopicWrite) -> Topic | None:
-        with self._lock:
-            if topic_id not in self._topics:
-                return None
-            topic = Topic(id=topic_id, **data.model_dump())
-            self._topics[topic_id] = topic
-            return topic
+        record = self.session.get(TopicRecord, topic_id)
+        if record is None:
+            return None
+        for field, value in data.model_dump().items():
+            setattr(record, field, value)
+        self.session.commit()
+        self.session.refresh(record)
+        return Topic.model_validate(record)
 
     def delete_topic(self, topic_id: int) -> bool:
-        with self._lock:
-            return self._topics.pop(topic_id, None) is not None
+        record = self.session.get(TopicRecord, topic_id)
+        if record is None:
+            return False
+        self.session.delete(record)
+        self.session.commit()
+        return True
 
 
-_service = TopicService()
-
-
-def get_topic_service() -> TopicService:
-    return _service
+def get_topic_service(session: Annotated[Session, Depends(get_session)]) -> TopicService:
+    return TopicService(session)
