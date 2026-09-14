@@ -1,49 +1,71 @@
 # Database design
 
-## Scope
+## Implemented storage
 
-This is the requested Topic-only implementation baseline plus a Planned Item draft.
-It is not a live migration inventory. No database or migration changes accompany
-this document; existing repository implementation is not rolled back.
+PostgreSQL stores Topics and Items through SQLAlchemy. Alembic revision `0001`
+creates Topics; `0002_create_items.py` creates Items. Current head is `0002`.
+Previously applied migration files are preserved unchanged.
 
-## Topic — Implemented baseline
+## Topics
 
-PostgreSQL stores Topics through SQLAlchemy. Alembic manages schema changes.
-
-| Field | Type | Rules |
+| Field | PostgreSQL type | Rules |
 | --- | --- | --- |
-| id | integer | Generated primary key |
-| name | text | Required; application rejects empty or whitespace-only names |
+| id | integer / serial | Generated primary key |
+| name | text | Required; application rejects blank names |
 | description | text | Nullable |
 | enabled | boolean | Required, default true |
 
-## Item — Planned
+## Items
 
 ```text
 Topic 1 ─── N Item
 ```
 
-One Topic is planned to have many Items; each Item belongs to one Topic.
+A Topic owns multiple Items; every Item references one existing Topic.
 
-| Field | Proposed PostgreSQL type | Planned rules |
+| Field | PostgreSQL type | Rules |
 | --- | --- | --- |
-| id | integer | Generated primary key |
-| topic_id | integer | Required foreign key to topics.id; index for Topic queries |
-| source | varchar(100) | Required, stable source namespace |
-| external_id | varchar(500) | Required identifier within source |
-| title | text | Required, non-empty |
-| url | text | Required, non-empty |
+| id | integer / serial | Generated primary key |
+| topic_id | integer | NOT NULL, foreign key, indexed |
+| source | varchar(100) | NOT NULL, stable namespace |
+| external_id | varchar(500) | NOT NULL, stable source identifier |
+| title | text | NOT NULL; schema/service reject empty or whitespace-only values |
+| url | text | NOT NULL; schema/service reject empty or whitespace-only values |
 | author | text | Nullable |
-| published_at | timestamp with time zone | Nullable |
+| published_at | timestamp with time zone | Nullable; input requires timezone |
 | snippet | text | Nullable |
-| collected_at | timestamp with time zone | System-generated collection time |
+| collected_at | timestamp with time zone | NOT NULL; database-generated current time |
 
-A unique constraint on `(source, external_id)` is planned to prevent repeated
-storage of the same external content. Adapters should generate consistent source
-names and stable IDs; feed-local IDs may need feed identity included.
+`fk_items_topic_id_topics` rejects missing Topic references and uses ON DELETE
+CASCADE. `TopicRecord.items` and `ItemRecord.topic` use back_populates; passive
+ORM deletion leaves cascading to the database. `ix_items_topic_id` supports
+queries for one Topic.
 
-This proposed uniqueness is global, not Topic-scoped. Combined with the one-Topic
-foreign key, a single external content record can belong to only one Topic.
-Multi-topic attribution would require a separate association design later.
-Deletion policy and detailed migration implementation should be confirmed during
-implementation. No Item table creation is performed or claimed by this document.
+`uq_items_source_external_id` enforces global `(source, external_id)` uniqueness,
+including writes from different sessions. ItemService rolls back rejected writes
+and propagates IntegrityError. Duplicate content is rejected, not silently updated.
+
+Identity is global rather than Topic-scoped: the same external content cannot be
+saved under a second Topic. Multi-topic attribution would need a future association
+model. Source names and external IDs must be stable; feed-local identifiers may
+need feed identity included. This is not semantic deduplication.
+
+Blank-string rules are applied by Pydantic and ItemService. Raw SQL bypasses these
+application rules, although database NOT NULL, foreign key, and unique constraints
+still apply. No AI or source-specific fields are included.
+
+## Migration and verification
+
+From backend with its virtual environment active:
+
+```powershell
+python -m alembic upgrade head
+python -m alembic current
+python -m alembic check
+python -m pytest -q
+```
+
+Offline tests use isolated SQLite files with foreign keys enabled for Item tests,
+including upgrade from `0001` to `0002`, downgrade, and preservation of Topics.
+An opt-in PostgreSQL test validates real constraints and timezone behavior without
+internet access. Downgrading `0002` deletes Items; do not run it on needed data.

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Documentation
 
+- Aligned architecture and database design with the implemented Item/SourceAdapter foundation and verified `0002` migration; no live sources are claimed.
+
 - Clarified the Content Collection planning baseline in the PRD, architecture, database design, and README.
 - Added proposed ADR-002 for a unified Item model instead of platform-specific content tables.
 

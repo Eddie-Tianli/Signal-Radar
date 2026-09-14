@@ -1,17 +1,9 @@
 # SignalRadar architecture
 
-## Planning baseline
-
-Topic CRUD with PostgreSQL persistence is the completed baseline for this design.
-The flow below is Planned. It is not a live code or migration inventory and does
-not imply that this documentation change removes existing code.
-
-## Content Collection — Planned
+## Implemented content foundation
 
 ```text
 Topic
-↓
-Collection Service
 ↓
 Source Adapter
 ↓
@@ -20,17 +12,30 @@ Normalized Item
 PostgreSQL
 ```
 
-- **Topic** provides the user's area of interest and collection context.
-- **Collection Service** is planned to coordinate a collection request, invoke an
-  adapter, attach the Topic association, validate results, and request persistence.
-- **Source Adapter** isolates platform-specific data formats. Future YouTube, RSS,
-  and Web Search adapters should all return the same normalized content shape.
-- **Item** is the planned unified internal content model, retaining source identity
-  without exposing vendor-specific response structures to downstream code.
-- **PostgreSQL** is planned to persist Items and enforce their Topic association
-  and source/external-ID uniqueness.
+This is the implemented contract and persistence foundation, not a running
+collection pipeline. There is no live Source or collection orchestrator yet.
 
-Adapters should handle format conversion; persistence should remain separate.
-No live source, collection runner, scheduler, or AI completion is claimed here.
-See [database design](database-design.md), [PRD](../product/PRD.md), and
-[ADR-002](../decisions/ADR-002-unified-content-model.md).
+- Topic CRUD and PostgreSQL persistence are available.
+- `SourceAdapter.search(query: str) -> list[NormalizedItem]` defines a minimal
+  synchronous adapter interface. Adapters isolate platform-specific data formats
+  and must not write to the database. No registry or dynamic loading is used.
+- `NormalizedItem` provides the common source identity and content fields.
+  A caller supplies the local Topic via `ItemCreate`; `Item` is the read schema,
+  following the existing `Topic` naming style.
+- `ItemService.create_item` validates input and commits a database record.
+  Invalid Topic references and duplicate identities are rejected by database
+  constraints; failed writes roll back the session. `list_topic_items` returns
+  Items for one Topic in ID order (an unknown Topic yields an empty list).
+- PostgreSQL generates IDs and collection times. Topic/Item navigation is
+  bidirectional; deleting a Topic cascades to its Items.
+
+FakeSource exists only in tests and demonstrates query → normalization → internal
+persistence without internet access. Future YouTube, RSS, and Web Search adapters
+must translate their responses into the same model rather than leaking vendor
+formats into storage and downstream processing.
+
+No real source integration, network collection, Item API/page, scheduler, crawler,
+AI, embeddings, semantic deduplication, clustering, or Digest is implemented here.
+
+See [database design](database-design.md). The PRD and ADR-002 retain the earlier
+planning context; this document records the current implemented foundation.
