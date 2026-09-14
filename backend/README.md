@@ -4,6 +4,21 @@ FastAPI + SQLAlchemy + local PostgreSQL. The Topic API contract is unchanged.
 
 ## Unified Item model
 
+The collection contract is `app.collection.source.SourceAdapter.search(query)`,
+returning `list[NormalizedItem]`. It does not persist data. Attach a Topic via
+`ItemCreate(topic_id=topic_id, **normalized.model_dump())`, then use
+`ItemService(session).create_item(data)`. Query with `list_topic_items(topic_id)`.
+Duplicate identities or missing Topics raise `IntegrityError` and roll back the
+failed write. `Item` remains the read-schema name to match the existing Topic style.
+Only tests implement FakeSource; no real adapters are included.
+
+If Windows denies access to old pytest temporary/cache directories, use a fresh
+temporary directory without changing those directories' permissions:
+
+```powershell
+python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-tests-$([guid]::NewGuid().ToString('N'))"
+```
+
 Migration `0002` adds `items`, linked to `topics` by a required `topic_id` foreign
 key. Deleting a Topic cascades to its Items. No Item HTTP endpoints or collectors
 are introduced in this stage.

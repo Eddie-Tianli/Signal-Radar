@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 from app.items.models import ItemRecord
 from app.items.schemas import Item, ItemCreate
 from app.topics.models import TopicRecord
+from app.items.service import ItemService
+from app.collection.source import SourceAdapter
+from app.items.schemas import NormalizedItem
 
 
 @pytest.fixture
@@ -129,3 +132,61 @@ def test_required_strings_are_not_blank(field):
 def test_published_at_requires_timezone():
     with pytest.raises(ValidationError):
         item_data(published_at="2026-09-01T12:00:00")
+
+
+def test_service_create_query_and_relationship(engine):
+    with Session(engine) as session:
+        service = ItemService(session)
+        first = service.create_item(ItemCreate(**item_data()))
+        second = service.create_item(ItemCreate(**item_data(external_id="entry-2")))
+        assert service.list_topic_items(1) == [first, second]
+        assert service.list_topic_items(999) == []
+        topic = session.get(TopicRecord, 1)
+        assert [item.id for item in topic.items] == [first.id, second.id]
+        assert topic.items[0].topic is topic
+
+
+def test_service_duplicate_rollback_and_missing_topic(engine):
+    with Session(engine) as session:
+        service = ItemService(session)
+        service.create_item(ItemCreate(**item_data()))
+        with pytest.raises(IntegrityError):
+            service.create_item(ItemCreate(**item_data()))
+        assert len(service.list_topic_items(1)) == 1
+        with pytest.raises(IntegrityError):
+            service.create_item(ItemCreate(**item_data(topic_id=999, external_id="missing")))
+        assert len(service.list_topic_items(1)) == 1
+
+
+@pytest.mark.parametrize("field", ["title", "url"])
+@pytest.mark.parametrize("value", ["", "   ", None])
+def test_service_revalidates_required_fields(engine, field, value):
+    with Session(engine) as session:
+        data = ItemCreate(**item_data())
+        setattr(data, field, value)
+        with pytest.raises(ValidationError):
+            ItemService(session).create_item(data)
+        assert ItemService(session).list_topic_items(1) == []
+
+
+class FakeSource(SourceAdapter):
+    """Test-only deterministic adapter. No network requests."""
+
+    def search(self, query: str) -> list[NormalizedItem]:
+        return [NormalizedItem(
+            source="test", external_id="fake-1", title=query,
+            url="https://example.com/fake-1",
+        )]
+
+
+def test_fake_source_to_item_service(engine):
+    with pytest.raises(TypeError):
+        SourceAdapter()
+    results = FakeSource().search("Example topic")
+    assert isinstance(results[0], NormalizedItem)
+    with Session(engine) as session:
+        service = ItemService(session)
+        created = service.create_item(ItemCreate(topic_id=1, **results[0].model_dump()))
+        assert created.title == "Example topic"
+        assert created.source == "test"
+        assert service.list_topic_items(1) == [created]

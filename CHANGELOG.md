@@ -10,18 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - Topic PostgreSQL persistence with SQLAlchemy, local environment configuration, and an initial Alembic migration. API contract unchanged.
 - Isolated database-backed CRUD and migration tests.
+- Unified Item ORM and Pydantic models with the existing `0002` migration, global source/external-ID uniqueness, and Topic foreign key.
+- Bidirectional Topic/Item relationship, internal ItemService creation and topic listing, and rollback after rejected duplicate writes.
+- Minimal SourceAdapter contract returning NormalizedItem; a test-only fake validates the flow without network calls.
+- Item and collection architecture/database documentation.
 
 ### Validation
 
 - Verified live PostgreSQL CRUD and persistence across backend process restarts on port `9912`.
-- All 17 isolated automated tests pass; Alembic reports no schema drift.
-
-### Planned (not implemented)
-
-- Additional information sources.
-- AI-powered relevance filtering and summarization.
-
-> These are future plans, not completed changes or authorization to start the next development stage.
+- The original PostgreSQL stage passed 17 isolated tests; the Item/collection foundation passes 37 offline tests, plus an opt-in PostgreSQL check.
 
 ## [0.0.4] - 2026-09-08
 

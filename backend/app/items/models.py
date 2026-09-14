@@ -30,4 +30,4 @@ class ItemRecord(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    topic: Mapped[TopicRecord] = relationship()
+    topic: Mapped[TopicRecord] = relationship(back_populates="items")

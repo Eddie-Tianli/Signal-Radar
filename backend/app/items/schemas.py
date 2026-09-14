@@ -7,8 +7,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstrai
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class ItemCreate(BaseModel):
-    topic_id: int = Field(gt=0)
+class NormalizedItem(BaseModel):
+    """Source-independent content, before association with a local Topic."""
     source: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     external_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
     title: NonEmptyString
@@ -16,6 +16,10 @@ class ItemCreate(BaseModel):
     author: str | None = None
     published_at: AwareDatetime | None = None
     snippet: str | None = None
+
+
+class ItemCreate(NormalizedItem):
+    topic_id: int = Field(gt=0)
 
 
 class Item(BaseModel):
