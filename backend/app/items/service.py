@@ -30,3 +30,21 @@ class ItemService:
             select(ItemRecord).where(ItemRecord.topic_id == topic_id).order_by(ItemRecord.id)
         ).all()
         return [Item.model_validate(record) for record in records]
+
+    def insert_if_new(self, data: ItemCreate) -> bool:
+        """Insert atomically, skipping only identity conflicts. Caller commits."""
+        if self.session.get_bind().dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert
+        validated = ItemCreate.model_validate(data.model_dump())
+        statement = insert(ItemRecord).values(**validated.model_dump()).on_conflict_do_nothing(
+            index_elements=["source", "external_id"]
+        ).returning(ItemRecord.id)
+        return self.session.execute(statement).scalar_one_or_none() is not None
+
+    def list_recent_topic_items(self, topic_id: int) -> list[Item]:
+        records = self.session.scalars(select(ItemRecord).where(
+            ItemRecord.topic_id == topic_id
+        ).order_by(ItemRecord.collected_at.desc(), ItemRecord.id.desc())).all()
+        return [Item.model_validate(record) for record in records]

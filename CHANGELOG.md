@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- YouTubeSource using one official Data API v3 search.list request, normalized into Items, with environment-based API key and sanitized errors.
+- Synchronous Topic scan API with atomic identity deduplication and fetched/created/duplicates counts, plus Topic Item reads ordered by collection time.
+- Mocked YouTube HTTP/API tests and an opt-in PostgreSQL insert-conflict check; no real quota is consumed by automated tests.
+
 - Topic PostgreSQL persistence with SQLAlchemy, local environment configuration, and an initial Alembic migration. API contract unchanged.
 - Isolated database-backed CRUD and migration tests.
 - Unified Item ORM and Pydantic models with the existing `0002` migration, global source/external-ID uniqueness, and Topic foreign key.

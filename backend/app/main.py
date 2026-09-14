@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.topics.router import router as topics_router
+from app.collection.router import router as collection_router
 
 
 app = FastAPI(title="SignalRadar API", version="0.0.1")
@@ -12,6 +13,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 app.include_router(topics_router)
+app.include_router(collection_router)
 
 
 @app.get("/")

@@ -12,6 +12,8 @@ from app.database import get_engine
 from app.items.models import ItemRecord
 from app.items.schemas import Item
 from app.topics.models import TopicRecord
+from app.items.schemas import ItemCreate
+from app.items.service import ItemService
 
 
 @pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Set RUN_POSTGRES_TESTS=1 after migrating local PostgreSQL")
@@ -60,5 +62,25 @@ def test_postgresql_item_constraints_and_timezone():
                 session.flush()
                 session.expunge_all()
                 assert session.get(ItemRecord, item_id) is None
+        finally:
+            transaction.rollback()
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Opt-in local PostgreSQL check")
+def test_postgresql_scan_insert_conflicts():
+    with get_engine().connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(connection, join_transaction_mode="create_savepoint") as session:
+                topic = TopicRecord(name="Scan conflict integration test")
+                session.add(topic)
+                session.flush()
+                data = ItemCreate(topic_id=topic.id, source="youtube", external_id=str(uuid4()),
+                                  title="Test", url="https://example.com/test")
+                service = ItemService(session)
+                assert service.insert_if_new(data) is True
+                assert service.insert_if_new(data) is False
+                session.commit()
+                assert len(service.list_recent_topic_items(topic.id)) == 1
         finally:
             transaction.rollback()

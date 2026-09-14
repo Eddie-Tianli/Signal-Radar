@@ -1,0 +1,67 @@
+# Local development
+
+## PostgreSQL and backend
+
+Follow backend/README.md to configure local PostgreSQL and backend/.env. From the
+repository root:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python -m alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+## YouTube API key
+
+1. Create/select a Google Cloud project and enable YouTube Data API v3.
+2. Create an API key and restrict its API access to YouTube Data API v3. Choose
+   application restrictions appropriate for a backend; browser-referrer-only keys
+   are not appropriate for this server-side request.
+3. Add YOUTUBE_API_KEY=your_key to backend/.env in a local editor. Do not put it in
+   frontend variables, source code, screenshots, or Git. Alternatively set the
+   environment variable on the backend process. Environment variables take precedence.
+4. Restart the backend after changing environment configuration.
+
+The tracked .env.example contains only an empty key placeholder. Existing .env is
+not overwritten. No OAuth flow is needed for this public-video search.
+
+Official references:
+- https://developers.google.com/youtube/v3/getting-started
+- https://developers.google.com/youtube/v3/docs/search/list
+
+## One real manual scan (consumes YouTube quota)
+
+1. Open http://127.0.0.1:8000/docs and create a Topic with name Christopher Nolan.
+2. Note the ID and execute POST /api/topics/{topic_id}/scan, with no body.
+3. Check source=youtube and fetched=created+duplicates (at most 15 returned results).
+4. Execute GET /api/topics/{topic_id}/items; check video links, titles, author and dates.
+5. Optionally repeat the scan to verify duplicate skipping. It consumes quota again;
+   live search results may change, so created is not guaranteed to be zero.
+6. Restart the backend and read the same Items to verify persistence.
+
+503 mentioning YOUTUBE_API_KEY means missing configuration. For 502 check API
+activation, key restrictions, quota and connectivity. 504 indicates a timeout.
+Do not copy the key into an API request URL or share raw upstream error logs.
+
+## Tests (no YouTube quota)
+
+```powershell
+python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-tests-$([guid]::NewGuid().ToString('N'))"
+```
+
+YouTube requests are intercepted by httpx.MockTransport, including success, repeated
+videos, failure and timeout responses. Tests use temporary SQLite databases.
+Optional local PostgreSQL checks do not contact YouTube:
+
+```powershell
+$env:RUN_POSTGRES_TESTS = '1'
+python -m pytest tests/test_items_postgresql.py -q -p no:cacheprovider
+Remove-Item Env:\RUN_POSTGRES_TESTS
+```
+
+## Frontend
+
+In another terminal, run npm run dev from frontend/. Topic management remains at
+http://localhost:3000/topics. This stage adds no collection UI; use Swagger.

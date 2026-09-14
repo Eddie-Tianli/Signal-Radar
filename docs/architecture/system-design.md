@@ -1,41 +1,49 @@
 # SignalRadar architecture
 
-## Implemented content foundation
+## YouTube collection
 
 ```text
 Topic
 ↓
-Source Adapter
+Collection Service
+↓
+YouTubeSource
+↓
+YouTube Data API
 ↓
 Normalized Item
 ↓
 PostgreSQL
 ```
 
-This is the implemented contract and persistence foundation, not a running
-collection pipeline. There is no live Source or collection orchestrator yet.
+`POST /api/topics/{topic_id}/scan` runs synchronously. CollectionService checks the
+Topic, uses exactly Topic.name as the query, calls YouTubeSource, and passes each
+normalized result to ItemService. No scheduler, keyword expansion, or pagination.
+An explicit scan is allowed even for a disabled Topic; enabled is not a scheduling
+policy in this version.
 
-- Topic CRUD and PostgreSQL persistence are available.
-- `SourceAdapter.search(query: str) -> list[NormalizedItem]` defines a minimal
-  synchronous adapter interface. Adapters isolate platform-specific data formats
-  and must not write to the database. No registry or dynamic loading is used.
-- `NormalizedItem` provides the common source identity and content fields.
-  A caller supplies the local Topic via `ItemCreate`; `Item` is the read schema,
-  following the existing `Topic` naming style.
-- `ItemService.create_item` validates input and commits a database record.
-  Invalid Topic references and duplicate identities are rejected by database
-  constraints; failed writes roll back the session. `list_topic_items` returns
-  Items for one Topic in ID order (an unknown Topic yields an empty list).
-- PostgreSQL generates IDs and collection times. Topic/Item navigation is
-  bidirectional; deleting a Topic cascades to its Items.
+YouTubeSource implements SourceAdapter.search. It calls the official search.list
+endpoint once with part=snippet, type=video, maxResults=15 and an API key. It has a
+15-second HTTP timeout and no automatic retries. All results are validated before
+persistence; malformed responses fail the scan. Titles/descriptions/channel names
+have HTML entities decoded. No raw vendor JSON is stored.
 
-FakeSource exists only in tests and demonstrates query → normalization → internal
-persistence without internet access. Future YouTube, RSS, and Web Search adapters
-must translate their responses into the same model rather than leaking vendor
-formats into storage and downstream processing.
+The collection transaction uses ItemService.insert_if_new with database
+ON CONFLICT (source, external_id) DO NOTHING. Only that identity conflict is skipped;
+other database failures roll back the scan. A successful scan reports fetched,
+created and duplicates, where fetched = created + duplicates. Duplicate occurrences
+within one response also count. Global identity uniqueness means a video already
+attached to another Topic counts as duplicate and is not reassigned.
 
-No real source integration, network collection, Item API/page, scheduler, crawler,
-AI, embeddings, semantic deduplication, clustering, or Digest is implemented here.
+`GET /api/topics/{topic_id}/items` returns Items in collected_at DESC, id DESC order.
+It has no pagination or filtering. Missing Topics return 404. Missing API keys
+return 503, upstream timeouts 504, and upstream HTTP/network/invalid-data errors
+502. No upstream response bodies, keys, or tracebacks are returned to clients.
 
-See [database design](database-design.md). The PRD and ADR-002 retain the earlier
-planning context; this document records the current implemented foundation.
+YOUTUBE_API_KEY is loaded from environment or the ignored backend/.env. HTTPX is
+used directly, without a Google SDK. Offline tests use HTTPX MockTransport and a
+fake key; local PostgreSQL tests use rollback-only test data and no YouTube calls.
+A real YouTube smoke test requires a user-configured key and is manual.
+
+No RSS, Web Search, AI, embeddings, semantic deduplication, clustering, Digest,
+scheduling, crawling, notifications, or new frontend page is implemented.
