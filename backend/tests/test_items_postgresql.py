@@ -1,0 +1,64 @@
+"""Opt-in checks against migrated local PostgreSQL; all inserted rows roll back."""
+
+import os
+from datetime import datetime, timezone
+from uuid import uuid4
+
+import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.database import get_engine
+from app.items.models import ItemRecord
+from app.items.schemas import Item
+from app.topics.models import TopicRecord
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Set RUN_POSTGRES_TESTS=1 after migrating local PostgreSQL")
+def test_postgresql_item_constraints_and_timezone():
+    with get_engine().connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(connection, join_transaction_mode="create_savepoint") as session:
+                topic = TopicRecord(name="Item integration test")
+                session.add(topic)
+                session.flush()
+                payload = dict(
+                    topic_id=topic.id, source="test", external_id=str(uuid4()),
+                    title="Integration test", url="https://example.com/item",
+                )
+                record = ItemRecord(**payload)
+                session.add(record)
+                session.flush()
+                session.refresh(record)
+                result = Item.model_validate(record)
+                assert result.collected_at.utcoffset() is not None
+                assert result.published_at is None
+                assert result.author is None and result.snippet is None
+                record.published_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+                session.flush()
+                session.refresh(record)
+                assert record.published_at == datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+                with pytest.raises(IntegrityError):
+                    with session.begin_nested():
+                        session.add(ItemRecord(**payload))
+                        session.flush()
+
+                missing = TopicRecord(name="Temporary missing-topic target")
+                session.add(missing)
+                session.flush()
+                missing_id = missing.id
+                session.delete(missing)
+                session.flush()
+                with pytest.raises(IntegrityError):
+                    with session.begin_nested():
+                        session.add(ItemRecord(**{**payload, "topic_id": missing_id, "external_id": str(uuid4())}))
+                        session.flush()
+                item_id = record.id
+                session.delete(topic)
+                session.flush()
+                session.expunge_all()
+                assert session.get(ItemRecord, item_id) is None
+        finally:
+            transaction.rollback()
