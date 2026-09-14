@@ -1,38 +1,49 @@
 # Database design
 
+## Scope
+
+This is the requested Topic-only implementation baseline plus a Planned Item draft.
+It is not a live migration inventory. No database or migration changes accompany
+this document; existing repository implementation is not rolled back.
+
+## Topic — Implemented baseline
+
+PostgreSQL stores Topics through SQLAlchemy. Alembic manages schema changes.
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| id | integer | Generated primary key |
+| name | text | Required; application rejects empty or whitespace-only names |
+| description | text | Nullable |
+| enabled | boolean | Required, default true |
+
+## Item — Planned
+
 ```text
-topics 1 ─── N items
+Topic 1 ─── N Item
 ```
 
-PostgreSQL is the runtime database. SQLAlchemy maps tables; Alembic migration
-`0001` creates topics and `0002_create_items.py` creates items. Existing applied
-migrations are retained unchanged.
+One Topic is planned to have many Items; each Item belongs to one Topic.
 
-## Items
-
-| Field | PostgreSQL type | Rules |
+| Field | Proposed PostgreSQL type | Planned rules |
 | --- | --- | --- |
-| id | integer / serial | Primary key, database generated |
-| topic_id | integer | NOT NULL, foreign key to topics.id, indexed |
-| source | varchar(100) | NOT NULL, stable source namespace |
-| external_id | varchar(500) | NOT NULL, stable ID within source |
-| title | text | NOT NULL; schema/service reject blank text |
-| url | text | NOT NULL; schema/service reject blank text |
+| id | integer | Generated primary key |
+| topic_id | integer | Required foreign key to topics.id; index for Topic queries |
+| source | varchar(100) | Required, stable source namespace |
+| external_id | varchar(500) | Required identifier within source |
+| title | text | Required, non-empty |
+| url | text | Required, non-empty |
 | author | text | Nullable |
-| published_at | timestamp with time zone | Nullable; input requires timezone |
+| published_at | timestamp with time zone | Nullable |
 | snippet | text | Nullable |
-| collected_at | timestamp with time zone | NOT NULL, database CURRENT_TIMESTAMP |
+| collected_at | timestamp with time zone | System-generated collection time |
 
-`uq_items_source_external_id` enforces global uniqueness of `(source, external_id)`.
-It is not topic-scoped: the same external content cannot be stored for two Topics.
-Supporting multi-topic attribution would require a future association model.
-Adapters must produce consistent namespaces and IDs (feed-local IDs should include
-feed identity). This is identity deduplication, not semantic deduplication.
+A unique constraint on `(source, external_id)` is planned to prevent repeated
+storage of the same external content. Adapters should generate consistent source
+names and stable IDs; feed-local IDs may need feed identity included.
 
-`fk_items_topic_id_topics` rejects missing Topics and cascades Item deletion when
-its Topic is deleted. ORM navigation is `TopicRecord.items` / `ItemRecord.topic`.
-`passive_deletes="all"` leaves deletion to PostgreSQL even for loaded relationships.
-
-Pydantic rejects null/empty/whitespace-only title and URL through ItemCreate and
-ItemService. Database NOT NULL rejects nulls, but direct raw SQL bypasses the
-Pydantic blank-string rules; internal callers should use the service.
+This proposed uniqueness is global, not Topic-scoped. Combined with the one-Topic
+foreign key, a single external content record can belong to only one Topic.
+Multi-topic attribution would require a separate association design later.
+Deletion policy and detailed migration implementation should be confirmed during
+implementation. No Item table creation is performed or claimed by this document.

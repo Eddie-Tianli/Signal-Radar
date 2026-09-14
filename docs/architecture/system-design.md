@@ -1,11 +1,17 @@
 # SignalRadar architecture
 
-## Content flow
+## Planning baseline
+
+Topic CRUD with PostgreSQL persistence is the completed baseline for this design.
+The flow below is Planned. It is not a live code or migration inventory and does
+not imply that this documentation change removes existing code.
+
+## Content Collection — Planned
 
 ```text
 Topic
 ↓
-Collection Layer
+Collection Service
 ↓
 Source Adapter
 ↓
@@ -14,24 +20,17 @@ Normalized Item
 PostgreSQL
 ```
 
-Item is the unified internal content model for all future information sources.
-Platform-specific response formats belong inside adapters, not database tables.
-This keeps downstream persistence and later presentation independent of vendor APIs.
+- **Topic** provides the user's area of interest and collection context.
+- **Collection Service** is planned to coordinate a collection request, invoke an
+  adapter, attach the Topic association, validate results, and request persistence.
+- **Source Adapter** isolates platform-specific data formats. Future YouTube, RSS,
+  and Web Search adapters should all return the same normalized content shape.
+- **Item** is the planned unified internal content model, retaining source identity
+  without exposing vendor-specific response structures to downstream code.
+- **PostgreSQL** is planned to persist Items and enforce their Topic association
+  and source/external-ID uniqueness.
 
-Implemented foundation:
-
-- `SourceAdapter.search(query) -> list[NormalizedItem]` is a synchronous abstract
-  contract, with no network implementation and no database writes.
-- `NormalizedItem` contains source identity and content fields, without local IDs.
-- Internal callers attach `topic_id` using `ItemCreate`, then call
-  `ItemService.create_item`. `id` and `collected_at` come from PostgreSQL.
-- `ItemService.list_topic_items` returns ordered Item read schemas.
-- Duplicate identities and invalid foreign keys raise SQLAlchemy IntegrityError;
-  failed service writes roll back the session. The service commits each successful
-  insert, matching TopicService's transaction convention.
-- FakeSource lives only in tests and proves normalization-to-persistence without
-  internet access. There is no collection runner, registry, scheduler, or live source.
-
-Topic CRUD and its frontend remain unchanged. No Item HTTP API, YouTube/RSS/Web
-integration, AI, crawling, clustering, authentication, or deployment is implemented
-by this foundation.
+Adapters should handle format conversion; persistence should remain separate.
+No live source, collection runner, scheduler, or AI completion is claimed here.
+See [database design](database-design.md), [PRD](../product/PRD.md), and
+[ADR-002](../decisions/ADR-002-unified-content-model.md).

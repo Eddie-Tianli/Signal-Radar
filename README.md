@@ -22,6 +22,12 @@ Topic storage now uses SQLAlchemy and local PostgreSQL. Configure the database a
 
 The API metadata version remains `0.0.1`; the changelog tracks development milestones separately.
 
+Next product stage: **Content Collection** — Topic-triggered collection, unified
+Item normalization, and support for multiple future Sources. The design documents
+use a Topic + PostgreSQL baseline and mark these designs as Planned; they are not
+a live inventory of existing repository code. AI has not started. No YouTube, RSS,
+or Web Search integration is claimed as complete.
+
 ## Local Development
 
 Run the backend in one PowerShell terminal:
