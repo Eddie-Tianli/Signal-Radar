@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Start the FastAPI backend at http://127.0.0.1:8000, then open http://localhost:3000. The homepage displays the backend status and API version.
+Start the FastAPI backend at http://127.0.0.1:8000, then open http://localhost:3000. The v0.1.0 homepage is a Dashboard with counts, recent content, latest Digest and local dependency states. Shared navigation links to Topics.
 
 Select **Manage Topics** or open http://localhost:3000/topics to view, create, edit, and delete topics. The page reports loading and request errors. Topic storage requires the PostgreSQL setup and migration described in [the backend README](../backend/README.md).
 

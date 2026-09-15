@@ -7,10 +7,11 @@ from app.ai.router import router as ai_router
 from app.digests.router import router as digests_router
 from app.scheduler.lifecycle import lifespan
 from app.health import dependency_status
+from app.dashboard import router as dashboard_router
 from app.notifications.service import notifications_enabled
 
 
-app = FastAPI(title="SignalRadar API", version="0.0.1", lifespan=lifespan)
+app = FastAPI(title="SignalRadar API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -21,6 +22,7 @@ app.include_router(topics_router)
 app.include_router(collection_router)
 app.include_router(ai_router)
 app.include_router(digests_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/")

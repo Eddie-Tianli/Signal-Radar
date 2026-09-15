@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+
 import { useEffect, useState } from "react";
 import { deleteTopic, listTopics, saveTopic, type Topic, type TopicInput } from "./api";
 import TopicForm from "./TopicForm";
@@ -70,16 +70,16 @@ export default function TopicsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-10 text-slate-900">
-      <div className="mx-auto max-w-5xl">
-        <Link href="/" className="text-sm text-slate-600 underline">SignalRadar home</Link>
-        <h1 className="mt-4 text-3xl font-bold">Topic Management</h1>
+    <main id="main-content" className="px-5 py-8 sm:px-8">
+      <div className="mx-auto max-w-7xl">
+        <p className="eyebrow">Workspace</p>
+        <h1 className="mt-4 text-3xl font-bold">Topics</h1>
         <p className="mt-2 text-slate-600">Create and manage the topics you want to follow.</p>
         <div aria-live="polite" className="my-5 space-y-2">
-          {notice && <p className="text-emerald-700">{notice}</p>}
+          {notice && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-800">{notice}</p>}
           {error && <p role="alert" className="text-red-700">{error}</p>}
         </div>
-        <div className="grid items-start gap-8 md:grid-cols-2">
+        <div className="grid items-start gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
           <TopicForm key={editing?.id ?? "create"} topic={editing} busy={busy || loading}
             onSave={handleSave} onCancel={() => setEditing(null)} />
           <section aria-label="Topic list" aria-busy={loading}>

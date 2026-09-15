@@ -5,7 +5,7 @@ import { analyzeItem, analyzeTopic, listItems, scanTopic, type AnalysisBatchResu
 import ItemList from "./ItemList";
 import TopicDigests from "./TopicDigests";
 
-export default function TopicContent({ topicId }: { topicId: number }) {
+export default function TopicContent({ topicId, topicName }: { topicId: number; topicName: string }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<CollectedItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,6 +120,8 @@ export default function TopicContent({ topicId }: { topicId: number }) {
 
   return (
     <section aria-label={`Collected items for Topic ${topicId}`} className="mt-5 border-t border-slate-200 pt-4">
+      <TopicDigests topicId={topicId} topicName={topicName} />
+      <div className="mb-3 mt-6"><h3 className="font-semibold">Collected Items</h3><p className="text-sm text-slate-500">Scan for content, then analyze its relevance to this Topic.</p></div>
       <div className="flex flex-wrap gap-3">
         <button onClick={() => void scan()} disabled={scanning || batchAnalyzing || Object.values(analyzing).some(Boolean)} className="rounded-lg bg-slate-900 px-3 py-2 text-white disabled:opacity-50">
           {scanning ? "Scanning..." : "Scan"}
@@ -141,7 +143,6 @@ export default function TopicContent({ topicId }: { topicId: number }) {
         {!!batchResult?.failed && <p role="alert" className="text-sm text-red-700">Some items could not be analyzed. Check local Ollama, or Analyze an individual item for details.</p>}
         {open && (loading ? <p role="status">Loading items...</p> : error ? <p role="alert" className="text-sm text-red-700">Could not load items: {error}</p> : <ItemList items={items} analyzing={analyzing} errors={analysisErrors} batchAnalyzing={batchAnalyzing || scanning} onAnalyze={(id) => void analyze(id)} />)}
       </div>
-      <TopicDigests topicId={topicId} />
     </section>
   );
 }

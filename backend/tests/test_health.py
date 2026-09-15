@@ -8,7 +8,7 @@ def test_status_backward_compatible_and_sanitized(monkeypatch):
     monkeypatch.setattr("app.main.dependency_status", lambda: {"database": "connected", "ollama": "unavailable"})
     with TestClient(app) as client:
         result = client.get("/api/status").json()
-        assert result == dict(name="SignalRadar API", version="0.0.1", status="running",
+        assert result == dict(name="SignalRadar API", version="0.1.0", status="running",
                              database="connected", ollama="unavailable", scheduler="disabled", notifications="disabled")
         assert client.get("/").json() == {key: result[key] for key in ("name", "version", "status")}
 

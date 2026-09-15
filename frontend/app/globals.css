@@ -2,4 +2,22 @@
 
 body {
   font-family: Arial, Helvetica, sans-serif;
+  background: #f5f7fa;
+  color: #172033;
+  line-height: 1.6;
+}
+
+@layer base {
+  button { cursor: pointer; font-weight: 500; }
+  button:disabled { cursor: not-allowed; opacity: .5; }
+  :focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+  input, textarea { background: white; }
+  [role="alert"] { background: #fff1f2; border-left: 3px solid #e11d48; padding: .65rem .85rem; border-radius: .35rem; }
+  [role="status"] { color: #475569; padding: .5rem 0; }
+}
+
+@layer components {
+  .panel { @apply rounded-xl border border-slate-200 bg-white p-5 sm:p-6; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-wider text-slate-500; }
+  .badge { @apply inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium; }
 }

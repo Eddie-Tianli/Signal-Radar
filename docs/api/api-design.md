@@ -1,5 +1,14 @@
 # API Design
 
+## v0.1.0 Dashboard
+
+GET /api/dashboard is read-only and returns total_topics, enabled_topics,
+total_items, relevant_items (analyzed and true), unanalyzed_items, recent_items
+and recent_digests. Recent lists contain at most five rows in timestamp/ID descending
+order, with Topic names for display. The first recent Digest is the latest. No
+activity table, cached counters or new migration is introduced. Database failure
+returns sanitized 503. Runtime status is read separately from GET /api/status.
+
 ## Topic management
 
 Existing GET/POST /api/topics and GET/PUT/DELETE /api/topics/{topic_id} retain their

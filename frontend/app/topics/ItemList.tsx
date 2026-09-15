@@ -15,15 +15,16 @@ export default function ItemList({ items, analyzing, errors, batchAnalyzing, onA
       {items.map((item) => {
         const safeUrl = /^https?:\/\//i.test(item.url);
         return (
-          <li key={item.id} className="min-w-0 rounded-lg border border-slate-200 p-4">
+          <li key={item.id} className={`min-w-0 rounded-lg border border-slate-200 p-4 ${item.ai_analyzed_at && item.ai_relevant === false ? "bg-slate-50" : "bg-white"}`}>
+            <p className="eyebrow mb-2">Original Content · {item.source}</p>
             <h4 className="break-words font-semibold">
               {safeUrl ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">{item.title}</a> : item.title}
             </h4>
             <p className="mt-2 text-sm text-slate-600">Source: {item.source} · Author: {item.author || "Unknown"}</p>
-            <p className="mt-1 text-sm text-slate-500">Published: {item.published_at ? <time dateTime={item.published_at}>{item.published_at}</time> : "Unknown"}</p>
+            <p className="mt-1 text-sm text-slate-500">Published: {item.published_at ? <time dateTime={item.published_at}>{new Date(item.published_at).toLocaleString()}</time> : "Unknown"}</p>
             <p className="my-3 whitespace-pre-wrap break-words text-sm text-slate-600">{item.snippet || "No description available."}</p>
-            {safeUrl && <a href={item.url} target="_blank" rel="noopener noreferrer" className="break-all text-sm text-blue-700 underline">{item.url}</a>}
-            <section aria-label={`AI Analysis for Item ${item.id}`} className="mt-4 border-t border-slate-200 pt-3">
+            {safeUrl && <a href={item.url} target="_blank" rel="noopener noreferrer" className="break-all text-sm text-blue-700 underline">Open original ↗</a>}
+            <section aria-label={`AI Analysis for Item ${item.id}`} className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h5 className="font-semibold">AI Analysis</h5>
                 <button onClick={() => onAnalyze(item.id)} disabled={analyzing[item.id] || batchAnalyzing}
@@ -34,11 +35,11 @@ export default function ItemList({ items, analyzing, errors, batchAnalyzing, onA
               <div aria-live="polite" className="mt-2 space-y-2 text-sm">
                 {errors[item.id] && <p role="alert" className="text-red-700">Analysis failed: {errors[item.id]}</p>}
                 {item.ai_analyzed_at ? <>
-                  <p className="font-medium">{item.ai_relevant ? "Relevant" : "Irrelevant"}</p>
+                  <p className="badge">{item.ai_relevant ? "Relevant" : "Irrelevant"}</p>
                   <p>Score: {item.ai_relevance_score ?? "Unknown"} · Category: {item.ai_category || "Unknown"}</p>
                   <p className="font-medium">AI Summary (AI-generated)</p>
                   <p className="whitespace-pre-wrap break-words text-slate-600">{item.ai_summary}</p>
-                  <p className="text-slate-500">Analyzed: <time dateTime={item.ai_analyzed_at}>{item.ai_analyzed_at}</time></p>
+                  <p className="text-slate-500">Analyzed: <time dateTime={item.ai_analyzed_at}>{new Date(item.ai_analyzed_at).toLocaleString()}</time></p>
                 </> : <p className="text-slate-500">Not analyzed</p>}
               </div>
             </section>
