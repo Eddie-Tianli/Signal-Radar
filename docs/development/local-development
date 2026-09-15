@@ -1,71 +1,27 @@
-# Local development
+# 本地开发指南
 
-## Local Usage (Windows)
+## Windows 本地使用
 
-Startup order: **PostgreSQL → Ollama → SignalRadar**. PostgreSQL may already run as
-a Windows service. Start it through your existing service setup if needed. Start
-Ollama from its desktop application or `ollama serve`; do not start a second copy
-when it already runs. Check `ollama list` for the configured model. The launcher
-does not start these services or change Windows configuration.
+启动顺序：**PostgreSQL → Ollama → SignalRadar**。PostgreSQL 可能已作为 Windows 服务运行；按本机已有方式启动即可。Ollama 可从桌面应用或 `ollama serve` 启动，已运行时不要重复启动。使用 `ollama list` 确认模型。
 
-One-time setup: create backend/.venv and install requirements-dev.txt, configure
-backend/.env, run `python -m alembic upgrade head` from backend/, and `npm install`
-from frontend/. Node.js/npm must be on PATH.
+首次准备：创建 backend/.venv，安装 requirements-dev.txt，配置 backend/.env，在 backend/ 执行 `python -m alembic upgrade head`，在 frontend/ 执行 `npm install`。Node.js/npm 需在 PATH 中。
 
-From repository root:
+在仓库根目录运行：
+
 ```powershell
 .\start-signalradar.ps1 -CheckOnly
 .\start-signalradar.ps1
 ```
-The script checks venv, .env, node_modules, Node/npm, database connectivity, migration
-0004, ports 8000/3000 and local Ollama /api/tags. It builds Next.js and starts the
-production frontend plus single-process backend. Use -SkipBuild only when the current
-frontend build exists and code has not changed. No install or migration runs silently.
-If PowerShell policy blocks the script, use an allowed local script policy according
-to your machine setup; this script never changes execution policy automatically.
 
-Ollama missing logs: `Ollama unavailable - AI analysis will fail until Ollama is started.`
-The app still starts. PostgreSQL or required files missing blocks launch with a repair
-message. Visit http://localhost:3000 and http://127.0.0.1:8000/api/status. The latter
-keeps name/version/status and adds database, ollama, scheduler, notifications. Ollama
-available means its API responds, not that OLLAMA_MODEL is configured/installed.
-Scheduler status reflects actual startup; notifications reflects its configured switch.
+脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration 0004、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
 
-Keep the launcher terminal open. Ctrl+C waits for in-flight work to finish or time out,
-then stops the frontend process tree it owns. Do not force-close during writes.
-Runtime logs are in logs/signalradar.log (2 MB rotation, three backups); the directory
-is ignored by Git. Existing secrets are not logged. Windows sleep pauses operation;
-there is no boot/login auto-start or service installation.
+Ollama 离线会记录 `Ollama unavailable - AI analysis will fail until Ollama is started.`，应用仍能启动。数据库或必需文件缺失则阻止启动并提示处理方式。访问 http://localhost:3000 和 http://127.0.0.1:8000/api/status。后者保留 name/version/status，增加 database、ollama、scheduler、notifications；available 只表示 Ollama API 响应，不保证 OLLAMA_MODEL 已配置和安装。
 
-### Windows notification verification
+保持终端打开，Ctrl+C 等待当前请求完成或超时，再关闭自身启动的前端进程树。不要在写入时强制关闭。日志位于 logs/signalradar.log，每 2 MB 轮转并保留 3 份备份，已被 Git 忽略。Windows 休眠会暂停运行；不提供开机、登录自启或系统服务安装。
 
-1. Start PostgreSQL and Ollama; set USE_MOCK_SOURCE=true and the correct OLLAMA_MODEL.
-2. Set SCHEDULER_ENABLED=true, SCAN_INTERVAL_MINUTES=1 and NOTIFICATIONS_ENABLED=true.
-3. Run the launcher, create a fresh enabled Topic with a unique name, then wait for
-   the first scheduled cycle plus local inference time. Avoid manual analysis in parallel.
-4. When a new relevant Item leads to a saved Digest, expect one SignalRadar toast
-   containing the Topic and relevant count. Windows groups it under Windows PowerShell.
-   If the model judges everything irrelevant there is correctly no toast.
-5. Confirm Digest history and logs: Scan completed, Analysis completed, Digest created,
-   Notification sent, Topic job completed. The next unchanged Mock cycle should skip
-   Digest and send nothing. A failed model/Digest call only logs failure.
-6. Disable NOTIFICATIONS_ENABLED, restart and test a new Topic: the workflow still
-   saves its Digest but no toast is sent. Windows Focus Assist/notification preferences
-   may suppress banners even when delivery succeeds; check Notification Center.
-7. Safely disable automatic work with Ctrl+C, then SCHEDULER_ENABLED=false and restart.
+## PostgreSQL 与后端
 
-Only scheduled successful new Digests notify; manual Generate Digest does not. Toast
-failures log Notification failed and still complete the Topic job. For a non-popup
-Windows payload check:
-```powershell
-'{"topic":"Local test","count":3}' | powershell -NoProfile -NonInteractive -File backend/app/notifications/toast.ps1 -ValidateOnly
-```
-All automated tests force real notification sending off and use FakeNotification.
-
-## PostgreSQL and backend
-
-Follow backend/README.md to configure local PostgreSQL and backend/.env. From the
-repository root:
+账户和数据库配置见 [后端说明](../../backend/README.md)。开发命令（Scheduler 关闭时）：
 
 ```powershell
 cd backend
@@ -75,162 +31,114 @@ python -m alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-## YouTube API key
+在另一个终端从 frontend/ 执行 `npm run dev`。主题页面：http://localhost:3000/topics。
 
-For local-only testing use the MockSource instructions below instead of configuring
-or calling YouTube.
+## MockSource 离线采集（仅开发和测试）
 
-1. Create/select a Google Cloud project and enable YouTube Data API v3.
-2. Create an API key and restrict its API access to YouTube Data API v3. Choose
-   application restrictions appropriate for a backend; browser-referrer-only keys
-   are not appropriate for this server-side request.
-3. Add YOUTUBE_API_KEY=your_key to backend/.env in a local editor. Do not put it in
-   frontend variables, source code, screenshots, or Git. Alternatively set the
-   environment variable on the backend process. Environment variables take precedence.
-4. Restart the backend after changing environment configuration.
+设置 backend/.env 中的 `USE_MOCK_SOURCE=true` 并重启，也可在启动后端的 PowerShell 中设置 `$env:USE_MOCK_SOURCE = 'true'`。进程环境变量优先，不需要 YouTube Key。未设置或 false 时使用 YouTube；切换需修改实际生效配置并重启。
 
-The tracked .env.example contains only an empty key placeholder. Existing .env is
-not overwritten. No OAuth flow is needed for this public-video search.
+1. 启动本地 PostgreSQL、后端和前端。
+2. 创建名为 Christopher Nolan 的 Topic，干净测试可使用新名称。
+3. 点击“扫描”，预期 source=mock、fetched=3、created=3、duplicates=0。
+4. 页面展示 3 条模拟内容，source 为 mock。
+5. 再次扫描，预期 fetched=3、created=0、duplicates=3。
+6. 刷新页面或重启后端，内容仍存在。
 
-Official references:
+ID 由标准化 query 和样本索引生成。全局 `(source, external_id)` 约束也会对相同 query 的不同 Topic 去重，因此新 Topic 首次扫描可能已经是重复项。发布日期固定，链接指向 localhost 占位页面，不是真实文章。
+
+MockSource 不创建 HTTP 客户端；前端只请求本地后端，后端连接本地 PostgreSQL。可在浏览器 DevTools 检查 Scan / Items 请求目标为 127.0.0.1:8000，外链不会自动加载。Mock 测试拒绝非回环 socket，并在 YouTubeSource.search 被调用时失败。
+
+## 本地 Ollama 分析
+
+1. 启动 Ollama；尚未运行时可执行 `ollama serve`。
+2. 使用 `ollama list` 获取已安装模型的完整名称；用 `Invoke-RestMethod http://localhost:11434/api/tags` 检查服务。
+3. 设置 OLLAMA_BASE_URL=http://localhost:11434、OLLAMA_MODEL 为实际模型名称，USE_MOCK_SOURCE=true。不会自动下载模型；修改后重启。
+4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0004 head）。
+5. 创建 Topic 并扫描，在内容卡片点击“分析”，或“分析未处理内容”。先少量测试，本地模型可能较慢，单次后端调用超时为 120 秒。
+6. 查看相关性、评分、分类、AI 摘要和分析时间；刷新后仍应存在。
+
+Swagger 也可使用 `POST /api/items/{item_id}/analyze` 或 `POST /api/topics/{id}/analyze?limit=1`。数据库检查语句：
+
+```sql
+SELECT id, ai_relevant, ai_relevance_score, ai_category, ai_summary, ai_analyzed_at FROM items;
+```
+
+MockSource 只模拟内容，不模拟 AI；正常浏览器流程仍依赖 Ollama。自动测试使用 FakeAI 和 MockTransport，不真实推理。结构化输出参考：https://docs.ollama.com/capabilities/structured-outputs。
+
+## Digest 与自动任务
+
+1. 设置 USE_MOCK_SOURCE=true、SCHEDULER_ENABLED=false，启动已配置模型的 Ollama。
+2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0004 head。
+3. 启动前后端，创建 Topic，点击“扫描”和“分析”。
+4. 至少一条内容需被判断为相关，否则“生成简报”返回 409；全部不相关也可能是正常模型判断。
+5. 点击“生成简报”，检查 AI 标记、标题、引用数、时间和摘要；“查看历史简报”读取保存的快照。
+6. 重启后端并刷新历史，确认持久化。对应 API 为 `POST /api/topics/{id}/digest` 和 `GET /api/topics/{id}/digests`。
+7. 验证自动任务时创建新名称的启用 Topic，停止后端，设置 SCHEDULER_ENABLED=true、SCAN_INTERVAL_MINUTES=1，再以单进程 `uvicorn app.main:app` 启动，不使用 --reload 或多个 worker。
+8. 等待一分钟加推理时间，查看日志中的 Topic ID、扫描与分析数量、Digest created/skipped，再刷新内容和简报历史。
+9. 下一轮无变化的 Mock 扫描不会插入重复内容、重新分析或重复生成简报。只处理启用的 Topic，每轮每 Topic 最多处理 20 条待分析内容，包括此前遗留内容。
+
+安全关闭：Ctrl+C，等待当前请求完成或超时；停止信号之后不启动下一条内容或 Topic。将 SCHEDULER_ENABLED=false 后重启即可保留手动功能。进程环境变量优先于 .env，注意同步清除或修改已有设置。间隔范围 0.1–10080 分钟，默认 60；首次等待完整间隔，下一轮从上一轮完成后开始等待。
+
+不要同时运行多个后端或让手动工作流与 Scheduler 竞争。锁仅在单进程内生效，没有分布式锁。分析成功但 Digest 失败时，可手动生成恢复；没有持久化重试队列。
+
+## Windows 通知验证
+
+1. 启动 PostgreSQL、Ollama，设置 USE_MOCK_SOURCE=true 和正确 OLLAMA_MODEL。
+2. 设置 SCHEDULER_ENABLED=true、SCAN_INTERVAL_MINUTES=1、NOTIFICATIONS_ENABLED=true。
+3. 运行启动脚本，创建名称唯一且启用的 Topic，等待首轮及推理时间，不同时手动分析。
+4. 新相关内容产生且 Digest 保存后，应发送包含 Topic 与相关数量的 SignalRadar 通知；Windows 归到 Windows PowerShell。全部不相关时不通知。
+5. 检查历史和日志：Scan completed、Analysis completed、Digest created、Notification sent、Topic job completed。下一轮无变化时跳过 Digest 和通知；模型或简报失败仅记日志。
+6. 关闭 NOTIFICATIONS_ENABLED 并重启，用新 Topic 验证简报正常保存但不通知。专注助手或系统设置可能抑制横幅，请检查通知中心。
+7. Ctrl+C 后设置 SCHEDULER_ENABLED=false 并重启，安全关闭自动任务。
+
+仅自动任务成功的新简报通知，手动生成不通知。发送失败记录 Notification failed，不影响业务完成。不弹通知的 payload 检查：
+
+```powershell
+'{"topic":"Local test","count":3}' | powershell -NoProfile -NonInteractive -File backend/app/notifications/toast.ps1 -ValidateOnly
+```
+
+自动测试强制关闭真实通知，使用 FakeNotification。
+
+## YouTube API Key 与真实手动扫描
+
+纯本地测试使用 MockSource，无需配置 YouTube。
+
+1. 在 Google Cloud 创建或选择项目，启用 YouTube Data API v3。
+2. 创建 Key，将 API 访问限制为 YouTube Data API v3，选择适用于服务端的应用限制；仅浏览器 referrer 限制不适合后端调用。
+3. 本地编辑 backend/.env，填写 YOUTUBE_API_KEY，或设置后端进程环境变量。不要放入前端变量、源码、截图或 Git；模板仅保留空占位。
+4. 设置 USE_MOCK_SOURCE=false 并重启。公开视频搜索不需要 OAuth。
+5. 在 http://127.0.0.1:8000/docs 创建 Topic，记录 ID，执行无 body 的 `POST /api/topics/{topic_id}/scan`。
+6. 检查 source=youtube、fetched=created+duplicates，最多 15 条；通过 `GET /api/topics/{topic_id}/items` 查看链接、标题、作者和日期。
+7. 重复扫描会再次消耗配额，实时结果可能改变，不保证 created=0。重启后端后检查内容持久化。
+
+503 提及 YOUTUBE_API_KEY 表示配置缺失；502 检查 API 启用、Key 限制、配额和网络；504 为超时。不要共享原始上游错误日志或将 Key 放入请求 URL。
+
+官方参考：
 - https://developers.google.com/youtube/v3/getting-started
 - https://developers.google.com/youtube/v3/docs/search/list
 
-## One real manual scan (consumes YouTube quota)
+## 自动化测试
 
-1. Open http://127.0.0.1:8000/docs and create a Topic with name Christopher Nolan.
-2. Note the ID and execute POST /api/topics/{topic_id}/scan, with no body.
-3. Check source=youtube and fetched=created+duplicates (at most 15 returned results).
-4. Execute GET /api/topics/{topic_id}/items; check video links, titles, author and dates.
-5. Optionally repeat the scan to verify duplicate skipping. It consumes quota again;
-   live search results may change, so created is not guaranteed to be zero.
-6. Restart the backend and read the same Items to verify persistence.
-
-503 mentioning YOUTUBE_API_KEY means missing configuration. For 502 check API
-activation, key restrictions, quota and connectivity. 504 indicates a timeout.
-Do not copy the key into an API request URL or share raw upstream error logs.
-
-## Tests (no YouTube quota)
+在 backend/ 中执行，不消耗真实 API 配额，也不调用 Ollama：
 
 ```powershell
 python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-tests-$([guid]::NewGuid().ToString('N'))"
 ```
 
-YouTube requests are intercepted by httpx.MockTransport, including success, repeated
-videos, failure and timeout responses. Tests use temporary SQLite databases.
-Optional local PostgreSQL checks do not contact YouTube:
+使用 httpx.MockTransport 覆盖成功、重复、失败和超时响应，数据库默认采用临时 SQLite。Scheduler 测试直接调用 run_cycle，不启动永久线程，即使本地 .env 启用也强制关闭后台启动。
+
+可选本地 PostgreSQL 检查（测试行回滚，sequence 可能前进）：
 
 ```powershell
 $env:RUN_POSTGRES_TESTS = '1'
-python -m pytest tests/test_items_postgresql.py -q -p no:cacheprovider
+python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-pg-tests-$([guid]::NewGuid().ToString('N'))"
 Remove-Item Env:\RUN_POSTGRES_TESTS
 ```
 
-## Local Ollama Item analysis
-
-1. Start the Ollama desktop service, or run `ollama serve` if it is not running.
-2. Run `ollama list` to find the exact installed DeepSeek 8B tag. Verify service
-   availability with `Invoke-RestMethod http://localhost:11434/api/tags`.
-3. In backend/.env set OLLAMA_BASE_URL=http://localhost:11434 and OLLAMA_MODEL to
-   that exact tag. Set USE_MOCK_SOURCE=true to avoid real source calls. No model
-   is downloaded automatically. Restart backend after configuration changes.
-4. From backend with its virtual environment activated, run:
-   `python -m alembic upgrade head`, then `python -m alembic current` (0003 head),
-   then `uvicorn app.main:app --reload`.
-5. In /docs create/scan a Mock Topic and GET /api/topics/{id}/items to obtain an ID.
-6. POST /api/items/{item_id}/analyze. Inspect ai_relevant, ai_relevance_score,
-   ai_category, ai_summary and ai_analyzed_at in its response and the Items GET.
-7. Optionally POST /api/topics/{id}/analyze?limit=1 to analyze another unprocessed
-   Item. Start small: local models may be slow. Single calls time out at 120 seconds.
-8. Inspect stored results in pgAdmin with:
-   `SELECT id, ai_relevant, ai_relevance_score, ai_category, ai_summary, ai_analyzed_at FROM items;`
-
-Automated AI tests use FakeAI and httpx.MockTransport; they never invoke real
-Ollama. Existing test commands also cover schema validation, migration and failure
-paths. Optional PostgreSQL checks validate AI field persistence and score constraints.
-No AI frontend controls have been added; use Swagger for this stage.
-Structured output reference: https://docs.ollama.com/capabilities/structured-outputs
-
-## Digest and automatic workflow
-
-1. Configure USE_MOCK_SOURCE=true and SCHEDULER_ENABLED=false in backend/.env.
-2. Start Ollama, check `ollama list`, and set OLLAMA_MODEL to an installed local
-   model's exact name. OLLAMA_BASE_URL defaults to http://localhost:11434.
-3. Activate backend/.venv; run `python -m alembic upgrade head`,
-   `python -m alembic current` (0004 head), and `python -m alembic check`.
-4. Start backend with `uvicorn app.main:app` and frontend with `npm run dev`.
-5. Create a Topic, Scan, and Analyze. At least one Item must be marked relevant;
-   model judgments can legitimately leave none. Generate Digest then shows 409.
-6. Click Generate Digest. Read the AI-generated label, title, count, time and summary.
-   View Digest History loads saved snapshots. API equivalents are POST
-   /api/topics/{id}/digest and GET /api/topics/{id}/digests.
-7. Restart the backend and reload history to verify persistence.
-8. For automation, create a fresh enabled Topic with a unique query, then stop the
-   backend. Set SCHEDULER_ENABLED=true and SCAN_INTERVAL_MINUTES=1 for a local test.
-   Restart with `uvicorn app.main:app` (one process, no --reload/--workers).
-9. Wait one minute plus inference time. Logs show Topic ID, scan counts, analysis
-   counts and Digest created/skipped. Refresh Items and View Digest History.
-10. A second unchanged Mock scan creates no new Items, reanalyzes none and skips
-    Digest generation. Only enabled Topics are processed. Previous pending Items
-    can be analyzed in later runs, up to 20 per Topic per cycle.
-
-Safe shutdown: press Ctrl+C and wait for the current external request to finish
-or time out (Ollama timeout 120 seconds). No next Item/Topic is started after the
-stop signal. Set SCHEDULER_ENABLED=false and restart to keep manual APIs available.
-Environment variables override .env; clear or change an existing process-level
-SCHEDULER_ENABLED setting too. Interval accepts 0.1-10080 minutes, default 60.
-The first run waits the full interval and each next run waits after completion.
-Do not run multiple backend processes or manual workflows concurrently with the
-scheduler. It is a single-process local feature, with no distributed locking.
-
-Offline tests need neither Ollama nor YouTube. From backend:
-```powershell
-python -m pytest tests/test_digests.py tests/test_scheduler.py -q -p no:cacheprovider --basetemp "$env:TEMP\sr-digest-$([guid]::NewGuid().ToString('N'))"
-$env:RUN_POSTGRES_TESTS='1'
-python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\sr-all-$([guid]::NewGuid().ToString('N'))"
-Remove-Item Env:\RUN_POSTGRES_TESTS
-```
-These use FakeAI/MockTransport and direct run_cycle calls, never permanent scheduler
-threads. Tests forcibly suppress scheduler startup even if local .env enables it.
-MockSource supplies fake content, not fake AI: the normal browser workflow still
-requires Ollama. Scheduler Digest failure after successful analysis can be recovered
-with manual Generate Digest; no persistent retry queue is implemented.
-
-## Frontend startup
-
-In another terminal, run npm run dev from frontend/. Topic management remains at
-http://localhost:3000/topics. Use Scan to collect and View items / Refresh items
-to read saved results.
-
-## Offline MockSource (development and tests only)
-
-Set `USE_MOCK_SOURCE=true` in backend/.env and restart the backend, or set
-`$env:USE_MOCK_SOURCE = 'true'` in its PowerShell terminal before starting uvicorn.
-Process environment variables take precedence over .env. No YouTube key is needed.
-Unset/default or false uses the existing YouTube source. To switch back, set false
-in the active configuration and restart. MockSource is not a real information source.
-
-1. Start local PostgreSQL and the backend, then run npm run dev in frontend/.
-2. Create a Topic named Christopher Nolan (use a new name for a clean test).
-3. Click Scan: expect source=mock, fetched=3, created=3, duplicates=0 in the response.
-4. The Topic automatically displays three simulated Items with mock source labels.
-5. Scan again: expect fetched=3, created=0, duplicates=3.
-6. Refresh or restart the backend: the saved Items remain available.
-
-IDs derive from a normalized query and fixture index, so repeated scans are stable.
-The existing global (source, external_id) constraint also deduplicates across Topics
-with the same query; an already scanned query may therefore return duplicates on
-the first scan of a new Topic. No schema change is needed. Published dates are fixed
-fixtures; links point to localhost placeholders, not genuine articles.
-
-MockSource creates data in memory without an HTTP client. The frontend calls only
-the local backend; the backend connects to local PostgreSQL. In browser DevTools,
-inspect Scan and Items requests: their destination is 127.0.0.1:8000. External links
-are not loaded automatically. Mock tests reject non-loopback socket connections and
-fail if YouTubeSource.search is invoked. PostgreSQL integration tests roll back rows.
+前端验证：
 
 ```powershell
-$env:RUN_POSTGRES_TESTS = '1'
-python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-mock-tests-$([guid]::NewGuid().ToString('N'))"
-Remove-Item Env:\RUN_POSTGRES_TESTS
+cd frontend
+npm run lint
+npm run build
 ```

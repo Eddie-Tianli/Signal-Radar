@@ -1,89 +1,74 @@
-# Database design
+# 数据库设计
 
-## Implemented storage
+## 已实现存储
 
-PostgreSQL stores Topics and Items through SQLAlchemy. Alembic revision `0001`
-creates Topics; `0002_create_items.py` creates Items. `0003_item_ai_analysis.py`
-adds nullable AI analysis fields. `0004_create_digests.py` adds Digest history.
-Current head is `0004`.
-Previously applied migration files are preserved unchanged.
+PostgreSQL 通过 SQLAlchemy 保存 Topic、Item 和 Digest。Alembic `0001` 创建 topics，`0002_create_items.py` 创建 items，`0003_item_ai_analysis.py` 增加 nullable AI 字段，`0004_create_digests.py` 增加简报历史。当前 head 为 `0004`，已应用 migration 保持不变。
 
-## Topics
+## topics
 
-| Field | PostgreSQL type | Rules |
+| 字段 | PostgreSQL 类型 | 约束说明 |
 | --- | --- | --- |
-| id | integer / serial | Generated primary key |
-| name | text | Required; application rejects blank names |
-| description | text | Nullable |
-| enabled | boolean | Required, default true |
+| id | integer / serial | 数据库生成的 primary key |
+| name | text | 必填；应用拒绝空名称 |
+| description | text | 可为 null |
+| enabled | boolean | 必填，默认 true |
 
-## Items
+## items
 
 ```text
 Topic 1 ─── N Item
 ```
 
-A Topic owns multiple Items; every Item references one existing Topic.
+一个 Topic 拥有多个 Item，每个 Item 必须关联已有 Topic。
 
-| Field | PostgreSQL type | Rules |
+| 字段 | PostgreSQL 类型 | 约束说明 |
 | --- | --- | --- |
-| id | integer / serial | Generated primary key |
-| topic_id | integer | NOT NULL, foreign key, indexed |
-| source | varchar(100) | NOT NULL, stable namespace |
-| external_id | varchar(500) | NOT NULL, stable source identifier |
-| title | text | NOT NULL; schema/service reject empty or whitespace-only values |
-| url | text | NOT NULL; schema/service reject empty or whitespace-only values |
-| author | text | Nullable |
-| published_at | timestamp with time zone | Nullable; input requires timezone |
-| snippet | text | Nullable |
-| collected_at | timestamp with time zone | NOT NULL; database-generated current time |
-| ai_relevant | boolean | Nullable until analyzed |
-| ai_relevance_score | double precision | Nullable; CHECK between 0 and 1 |
-| ai_category | varchar(50) | Nullable; short category |
-| ai_summary | text | Nullable; short AI summary |
-| ai_analyzed_at | timestamp with time zone | Nullable; successful analysis time |
+| id | integer / serial | 数据库生成的 primary key |
+| topic_id | integer | NOT NULL，foreign key，已建索引 |
+| source | varchar(100) | NOT NULL，稳定的来源命名空间 |
+| external_id | varchar(500) | NOT NULL，来源内稳定标识 |
+| title | text | NOT NULL；schema/service 拒绝空字符串及纯空白 |
+| url | text | NOT NULL；schema/service 拒绝空字符串及纯空白 |
+| author | text | 可为 null |
+| published_at | timestamp with time zone | 可为 null；输入必须包含时区 |
+| snippet | text | 可为 null |
+| collected_at | timestamp with time zone | NOT NULL；数据库生成当前时间 |
+| ai_relevant | boolean | 分析前为 null |
+| ai_relevance_score | double precision | 可为 null；CHECK 限制在 0 到 1 |
+| ai_category | varchar(50) | 可为 null；简短分类 |
+| ai_summary | text | 可为 null；AI 短摘要 |
+| ai_analyzed_at | timestamp with time zone | 可为 null；分析成功时间 |
 
-`fk_items_topic_id_topics` rejects missing Topic references and uses ON DELETE
-CASCADE. `TopicRecord.items` and `ItemRecord.topic` use back_populates; passive
-ORM deletion leaves cascading to the database. `ix_items_topic_id` supports
-queries for one Topic.
+`fk_items_topic_id_topics` 拒绝不存在的 Topic，并使用 `ON DELETE CASCADE`。`TopicRecord.items` 与 `ItemRecord.topic` 使用 back_populates；passive ORM 删除将级联交给数据库。`ix_items_topic_id` 支持按 Topic 查询。
 
-`uq_items_source_external_id` enforces global `(source, external_id)` uniqueness,
-including writes from different sessions. ItemService rolls back rejected writes
-and propagates IntegrityError. Duplicate content is rejected, not silently updated.
+`uq_items_source_external_id` 保证 `(source, external_id)` 全局唯一，包括跨 session 写入。ItemService 对被拒绝的普通创建回滚并抛出 IntegrityError，不静默更新；扫描则仅对该身份冲突使用 ON CONFLICT DO NOTHING。
 
-Identity is global rather than Topic-scoped: the same external content cannot be
-saved under a second Topic. Multi-topic attribution would need a future association
-model. Source names and external IDs must be stable; feed-local identifiers may
-need feed identity included. This is not semantic deduplication.
+同一外部内容不能再次保存到另一个 Topic。多 Topic 归属需要未来单独设计关联模型。source 和 external_id 必须稳定；feed 内局部 ID 可能需要包含 feed 身份。这不是语义去重。
 
-Blank-string rules are applied by Pydantic and ItemService. Raw SQL bypasses these
-application rules, although database NOT NULL, foreign key, and unique constraints
-still apply. `ck_items_ai_score` enforces the score range. Existing rows keep null
-AI fields until analyzed. No source-specific columns are included. Downgrading
-0003 removes analysis fields/results, while retaining the original Items.
+空字符串由 Pydantic 和 ItemService 校验，直接 SQL 会绕过应用规则，但仍受 NOT NULL、foreign key 和 unique constraint 约束。`ck_items_ai_score` 限制评分范围。已有行在分析前保持 AI 字段为 null，不包含平台专属 column。降级 0003 会删除 AI 字段和结果，保留原始 Item。
 
-## Digests
+## digests
 
-Topic 1:N Digest; each Digest references an existing Topic. Deleting a Topic
-cascades to its Digests, consistently with Items.
+```text
+Topic 1 ─── N Digest
+```
 
-| Field | PostgreSQL type | Rules |
+Digest 必须关联已有 Topic。删除 Topic 时级联删除其 Digest，与 Item 行为一致。
+
+| 字段 | PostgreSQL 类型 | 约束说明 |
 | --- | --- | --- |
-| id | integer / serial | Primary key |
-| topic_id | integer | Required FK, indexed |
-| title | varchar(200) | Required |
-| summary | text | Required, AI-generated |
-| item_count | integer | Number selected for this brief (1-20 through service) |
-| generated_at | timestamp with time zone | Required, database current time |
+| id | integer / serial | primary key |
+| topic_id | integer | 必填 foreign key，已建索引 |
+| title | varchar(200) | 必填 |
+| summary | text | 必填，由 AI 生成 |
+| item_count | integer | 本次采用的内容数量（service 限制 1–20） |
+| generated_at | timestamp with time zone | 必填，数据库当前时间 |
 
-History is sorted by generated_at DESC, id DESC. Briefs are saved text snapshots;
-no Item association table, embeddings or event IDs are added. Migration 0004
-preserves existing Topic/Item data; downgrading it removes Digest history.
+历史按 `generated_at DESC, id DESC` 返回。简报为文本快照，没有 Item 关联表、embedding 或 event ID。0004 保留已有 Topic / Item；降级会删除简报历史。
 
-## Migration commands
+## Migration 与测试命令
 
-From backend with its virtual environment active:
+在 backend 中激活虚拟环境后执行：
 
 ```powershell
 python -m alembic upgrade head
@@ -92,7 +77,4 @@ python -m alembic check
 python -m pytest -q
 ```
 
-Offline tests use isolated SQLite files with foreign keys enabled for Item tests,
-including upgrade from `0001` to `0002`, downgrade, and preservation of Topics.
-An opt-in PostgreSQL test validates real constraints and timezone behavior without
-internet access. Downgrading `0002` deletes Items; do not run it on needed data.
+离线测试使用隔离 SQLite 文件，Item 测试启用 foreign key，覆盖 0001 → 0002 升级、降级及 Topic 保留。可选 PostgreSQL 测试验证真实约束及时区行为，不访问互联网。降级 0002 会删除 Item，不要在需要保留数据的数据库上执行。

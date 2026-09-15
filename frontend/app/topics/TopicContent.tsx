@@ -42,7 +42,7 @@ export default function TopicContent({ topicId, topicName }: { topicId: number; 
       if (!controller.signal.aborted) setItems((previous) => previous.map((item) => item.id === id ? updated : item));
     } catch (error) {
       if (!controller.signal.aborted) setAnalysisErrors((previous) => ({ ...previous,
-        [id]: error instanceof Error ? error.message : "Check the backend and local Ollama service." }));
+        [id]: error instanceof Error ? error.message : "请检查后端和本地 Ollama 是否正常运行。" }));
     } finally {
       analysisControllers.current.delete(id);
       if (!controller.signal.aborted) setAnalyzing((previous) => ({ ...previous, [id]: false }));
@@ -60,7 +60,7 @@ export default function TopicContent({ topicId, topicName }: { topicId: number; 
       const result = await analyzeTopic(topicId, controller.signal);
       if (!controller.signal.aborted) setBatchResult(result);
     } catch (error) {
-      if (!controller.signal.aborted) setBatchError(error instanceof Error ? error.message : "Check the backend and local Ollama service.");
+      if (!controller.signal.aborted) setBatchError(error instanceof Error ? error.message : "请检查后端和本地 Ollama 是否正常运行。");
     } finally {
       batchController.current = null;
       if (!controller.signal.aborted) {
@@ -82,7 +82,7 @@ export default function TopicContent({ topicId, topicName }: { topicId: number; 
         const data = await listItems(topicId, controller.signal);
         if (!controller.signal.aborted) setItems(data);
       } catch (error) {
-        if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not load items.");
+        if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "内容加载失败，请重试。");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -111,7 +111,7 @@ export default function TopicContent({ topicId, topicName }: { topicId: number; 
         refreshItems();
       }
     } catch (error) {
-      if (!controller.signal.aborted) setScanError(error instanceof Error ? error.message : "Scan failed.");
+      if (!controller.signal.aborted) setScanError(error instanceof Error ? error.message : "扫描失败，请重试。");
     } finally {
       scanController.current = null;
       if (!controller.signal.aborted) setScanning(false);
@@ -119,29 +119,29 @@ export default function TopicContent({ topicId, topicName }: { topicId: number; 
   }
 
   return (
-    <section aria-label={`Collected items for Topic ${topicId}`} className="mt-5 border-t border-slate-200 pt-4">
+    <section aria-label={`主题已采集内容：${topicId}`} className="mt-5 border-t border-slate-200 pt-4">
       <TopicDigests topicId={topicId} topicName={topicName} />
-      <div className="mb-3 mt-6"><h3 className="font-semibold">Collected Items</h3><p className="text-sm text-slate-500">Scan for content, then analyze its relevance to this Topic.</p></div>
+      <div className="mb-3 mt-6"><h3 className="font-semibold">已采集内容</h3><p className="text-sm text-slate-500">扫描获取内容，再分析内容与本主题的相关性。</p></div>
       <div className="flex flex-wrap gap-3">
         <button onClick={() => void scan()} disabled={scanning || batchAnalyzing || Object.values(analyzing).some(Boolean)} className="rounded-lg bg-slate-900 px-3 py-2 text-white disabled:opacity-50">
-          {scanning ? "Scanning..." : "Scan"}
+          {scanning ? "正在扫描…" : "扫描"}
         </button>
         <button onClick={refreshItems} disabled={loading || scanning || batchAnalyzing || Object.values(analyzing).some(Boolean)} className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">
-          {open ? "Refresh items" : "View items"}
+          {open ? "刷新内容" : "查看内容"}
         </button>
         <button onClick={() => void analyzeBatch()} disabled={batchAnalyzing || loading || scanning || Object.values(analyzing).some(Boolean)}
           className="rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50">
-          {batchAnalyzing ? "Analyzing unprocessed items..." : "Analyze Unprocessed Items"}
+          {batchAnalyzing ? "正在分析待处理内容…" : "分析未处理内容"}
         </button>
       </div>
       <div aria-live="polite" className="mt-3 space-y-3">
-        {result && <p className="text-sm text-emerald-700">Fetched: {result.fetched} · New: {result.created} · Duplicates: {result.duplicates}</p>}
-        {scanError && <p role="alert" className="text-sm text-red-700">Scan failed: {scanError}</p>}
-        {batchAnalyzing && <p role="status" className="text-sm">Analyzing up to 10 items sequentially. This may take several minutes.</p>}
-        {batchError && <p role="alert" className="text-sm text-red-700">Batch analysis failed: {batchError}</p>}
-        {batchResult && <p className="text-sm">Processed: {batchResult.processed} · Relevant: {batchResult.relevant} · Irrelevant: {batchResult.irrelevant} · Failed: {batchResult.failed}</p>}
-        {!!batchResult?.failed && <p role="alert" className="text-sm text-red-700">Some items could not be analyzed. Check local Ollama, or Analyze an individual item for details.</p>}
-        {open && (loading ? <p role="status">Loading items...</p> : error ? <p role="alert" className="text-sm text-red-700">Could not load items: {error}</p> : <ItemList items={items} analyzing={analyzing} errors={analysisErrors} batchAnalyzing={batchAnalyzing || scanning} onAnalyze={(id) => void analyze(id)} />)}
+        {result && <p className="text-sm text-emerald-700">获取：{result.fetched} · 新增：{result.created} · 重复：{result.duplicates}</p>}
+        {scanError && <p role="alert" className="text-sm text-red-700">扫描失败：{scanError}</p>}
+        {batchAnalyzing && <p role="status" className="text-sm">正在依次分析最多 10 条内容，可能需要几分钟。</p>}
+        {batchError && <p role="alert" className="text-sm text-red-700">批量分析失败：{batchError}</p>}
+        {batchResult && <p className="text-sm">已完成：{batchResult.processed} · 相关：{batchResult.relevant} · 不相关：{batchResult.irrelevant} · 失败：{batchResult.failed}</p>}
+        {!!batchResult?.failed && <p role="alert" className="text-sm text-red-700">部分内容分析失败。请检查本地 Ollama，或单独分析该条内容以查看具体原因。</p>}
+        {open && (loading ? <p role="status">正在加载内容…</p> : error ? <p role="alert" className="text-sm text-red-700">内容加载失败：{error}</p> : <ItemList items={items} analyzing={analyzing} errors={analysisErrors} batchAnalyzing={batchAnalyzing || scanning} onAnalyze={(id) => void analyze(id)} />)}
       </div>
     </section>
   );

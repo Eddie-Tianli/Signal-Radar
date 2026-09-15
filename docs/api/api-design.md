@@ -1,101 +1,80 @@
-# API Design
+# API 设计
 
-## v0.1.0 Dashboard
+接口路径、request / response JSON 字段及 HTTP status code 保持英文。Swagger：http://127.0.0.1:8000/docs。
+后端错误继续使用 `{"detail":"..."}`；中文界面对已知错误进行展示层映射，不改变 API contract。
 
-GET /api/dashboard is read-only and returns total_topics, enabled_topics,
-total_items, relevant_items (analyzed and true), unanalyzed_items, recent_items
-and recent_digests. Recent lists contain at most five rows in timestamp/ID descending
-order, with Topic names for display. The first recent Digest is the latest. No
-activity table, cached counters or new migration is introduced. Database failure
-returns sanitized 503. Runtime status is read separately from GET /api/status.
+## GET /api/dashboard
 
-## Topic management
+只读概览，返回 total_topics、enabled_topics、total_items、relevant_items（已分析且相关）、unanalyzed_items、recent_items 和 recent_digests。近期列表最多 5 条，按时间及 ID 倒序，包含展示用 Topic 名称；第一份 Digest 为最新简报。不使用 activity 表或缓存计数，无新 migration。数据库不可用返回安全的 503。
 
-Existing GET/POST /api/topics and GET/PUT/DELETE /api/topics/{topic_id} retain their
-contracts. Topic fields are id, name, description, enabled.
+## GET /api/status
+
+保留 name、version、status，并提供 database、ollama、scheduler、notifications。Ollama 状态仅检查 API 是否可访问，不保证配置模型已安装；scheduler 反映实际启动状态，notifications 反映开关配置。不返回 Key、密码或连接字符串。
+
+## Topic 管理
+
+`GET /api/topics`、`POST /api/topics`、`GET /api/topics/{topic_id}`、`PUT /api/topics/{topic_id}`、`DELETE /api/topics/{topic_id}` 保持既有 contract。字段为 id、name、description、enabled；name 不允许为空，description 可为 null。
 
 ## POST /api/topics/{topic_id}/scan
 
-No request body. Performs one synchronous YouTube search using Topic.name, with
-up to 15 video results and no pagination. Returns HTTP 200 after a successful scan:
+无 request body，同步执行。默认使用 Topic.name 搜索 YouTube，一次最多 15 条，无分页；`USE_MOCK_SOURCE=true` 使用固定 3 条模拟结果。成功返回 HTTP 200：
 
 ```json
 {"topic_id": 1, "source": "youtube", "fetched": 15, "created": 12, "duplicates": 3}
 ```
 
-Counts reflect returned normalized results, not YouTube's total search matches.
-Repeated scans still request YouTube and consume quota. Existing videos are skipped
-by global source/external-ID identity, including videos attached to another Topic.
-No content updates or cross-topic reassignment occur. An empty result returns zeros.
+数量表示本次标准化结果，而非 YouTube 总匹配数，满足 fetched = created + duplicates。重复真实扫描仍调用 YouTube 并消耗配额。已存在的 `(source, external_id)` 全局跳过，包括归属其他 Topic 的内容；不更新内容或改变归属。空结果返回零计数。
 
-Errors use FastAPI's {"detail": "message"} format:
-
-| Status | Meaning |
+| HTTP status code | 含义 |
 | --- | --- |
-| 404 | Topic does not exist; no YouTube request |
-| 503 | YOUTUBE_API_KEY missing, or database write unavailable |
-| 504 | YouTube HTTP timeout |
-| 502 | Upstream HTTP error, connection failure, or invalid response |
-| 422 | Invalid path parameter |
+| 404 | Topic 不存在，不调用信息源 |
+| 503 | 缺少 YOUTUBE_API_KEY，或数据库写入不可用 |
+| 504 | YouTube 请求超时 |
+| 502 | 上游 HTTP、网络或响应格式错误 |
+| 422 | 路径参数无效 |
 
-No automatic retries. Database writes are one transaction; malformed upstream
-results are rejected before any writes. Current enabled flag does not block manual scans.
+无自动重试。数据库写入使用单个事务，无效上游数据在写入前被拒绝。enabled 不限制手动扫描。
 
 ## GET /api/topics/{topic_id}/items
 
-Returns HTTP 200 with an array (empty when no Items), ordered by collected_at DESC
-then id DESC. Missing Topic: 404. Database failure: 503.
+成功返回 HTTP 200 数组，无内容时为 `[]`，按 collected_at DESC、id DESC 排序。Topic 不存在返回 404，数据库失败返回 503。
 
-Each Item contains id, topic_id, source, external_id, title, url, author,
-published_at, snippet, collected_at. Author, published_at and snippet can be null.
-Items also include nullable ai_relevant, ai_relevance_score, ai_category, ai_summary,
-and ai_analyzed_at. No pagination, filters, or sorting controls are provided.
-
-Swagger is available at http://127.0.0.1:8000/docs.
+每条 Item 包含 id、topic_id、source、external_id、title、url、author、published_at、snippet、collected_at；author、published_at、snippet 可为 null。还包含可为 null 的 ai_relevant、ai_relevance_score、ai_category、ai_summary、ai_analyzed_at。不提供分页、筛选或排序控制。
 
 ## POST /api/topics/{topic_id}/digest
 
-No body. Uses up to 20 analyzed relevant Items and returns a saved Digest:
+无 request body，最多使用 20 条已分析且相关的 Item，返回已保存的完整 Digest：
+
 ```json
 {"id":1,"topic_id":1,"title":"Topic Brief","summary":"AI-generated content...","item_count":3,"generated_at":"2026-09-15T12:00:00Z"}
 ```
-404: missing Topic. 409: no eligible Items (no AI call). Provider errors use the
-same 502/503/504 semantics as analysis, and database failures return sanitized 503.
-Each successful manual request creates a new snapshot; there is no automatic retry.
+
+Topic 不存在返回 404。无符合条件内容返回 409，不调用 AI。Provider 使用与分析相同的 502 / 503 / 504 语义；数据库失败返回安全的 503。每次成功手动请求保存新快照，无自动重试。
 
 ## GET /api/topics/{topic_id}/digests
 
-Returns an array of complete Digests ordered by generated_at DESC, id DESC.
-Existing Topic without history returns []; missing Topic returns 404. No pagination
-or standalone detail endpoint is implemented. All summaries are AI-generated.
+返回完整 Digest 数组，按 generated_at DESC、id DESC 排序。已有 Topic 无历史返回 `[]`，Topic 不存在返回 404。无分页和独立详情接口，所有摘要均由 AI 生成。
 
 ## POST /api/items/{item_id}/analyze
 
-No body. Analyzes one saved Item against its Topic and returns HTTP 200 with the
-complete Item including ai_* fields. Repeating explicitly replaces the analysis
-only after a successful validated response. Missing Item: 404. Missing model
-configuration, missing Ollama model/endpoint, unreachable local service or database
-failure: 503. Timeout: 504. Invalid structured output or upstream failure: 502.
-Errors use {"detail":"..."}; raw model responses and tracebacks are not exposed.
+无 request body。针对所属 Topic 分析已保存 Item，成功返回 HTTP 200 和包含 ai_* 的完整 Item。显式重复调用仅在校验成功后替换旧结果。
 
-Structured provider result:
+Item 不存在返回 404；模型配置缺失、Ollama 模型或接口不存在、本地服务不可连接、数据库失败返回 503；超时返回 504；结构化输出无效或上游失败返回 502。不暴露原始模型响应和 traceback。
+
+Provider 结构化结果：
+
 ```json
 {"relevant":true,"relevance_score":0.87,"category":"news","summary":"A short summary."}
 ```
-Boolean is strict, score must be finite and in [0,1], category has 1-50 characters,
-summary has 1-1000 characters. The prompt requests 1-3 sentences. Extra keys are
-rejected. The provider schema maps to the corresponding persisted ai_* fields.
+
+relevant 为严格 boolean；relevance_score 必须有限且在 [0,1]；category 为 1–50 字符，summary 为 1–1000 字符。Prompt 要求 1–3 句，不接受额外字段。结果映射到持久化 ai_* 字段。
 
 ## POST /api/topics/{topic_id}/analyze?limit=10
 
-No body. limit is 1-10 (default 10); invalid limits return 422. Only Items with
-ai_analyzed_at=null are selected in ID order. Missing Topic returns 404.
+无 request body。limit 范围 1–10，默认 10，无效值返回 422。仅按 ID 顺序选择 ai_analyzed_at=null 的 Item，Topic 不存在返回 404。
+
 ```json
 {"topic_id":1,"processed":3,"relevant":2,"irrelevant":1,"failed":0}
 ```
-processed counts successful analyses and equals relevant+irrelevant. failed counts
-provider failures; attempted count is processed+failed. A batch with provider
-failures returns HTTP 200 and nonzero failed; retry a single Item for its detailed
-error. Successful Items remain saved if a later request fails. Database failure
-returns 503 and earlier committed successes remain. Batches are synchronous and
-can take several minutes; no automatic retry, queue, or scheduling is provided.
+
+processed 表示成功数，等于 relevant + irrelevant；failed 为 Provider 失败数，尝试数为 processed + failed。部分 Provider 失败仍返回 HTTP 200，failed 非零；可单条重试查看详细原因。之前成功的内容已经保存，不因后续失败撤销；数据库失败返回 503。批量接口同步执行，可能需要数分钟，没有自动重试或后台队列；Scheduler 是独立的调用方。
