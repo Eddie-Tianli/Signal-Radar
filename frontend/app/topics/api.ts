@@ -9,10 +9,10 @@ export type TopicInput = Omit<Topic, "id">;
 
 const baseUrl = "http://127.0.0.1:8000/api/topics";
 
-async function request(path = "", options: RequestInit = {}, timeoutMs = 5000) {
+async function request(path = "", options: RequestInit = {}, timeoutMs = 5000, base = baseUrl) {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await fetch(`${base}${path}`, {
       ...options,
       cache: "no-store",
       signal: options.signal
@@ -23,7 +23,7 @@ async function request(path = "", options: RequestInit = {}, timeoutMs = 5000) {
     throw new Error("Cannot reach the backend. Check that it is running and try again.");
   }
   if (!response.ok) {
-    if (path.endsWith("/scan") || path.endsWith("/items")) {
+    if (path.endsWith("/scan") || path.endsWith("/items") || path.includes("/analyze")) {
       const body = await response.json().catch(() => null);
       throw new Error(typeof body?.detail === "string" ? body.detail : `Request failed (HTTP ${response.status}).`);
     }
@@ -58,6 +58,11 @@ export type CollectedItem = {
   id: number; topic_id: number; source: string; external_id: string;
   title: string; url: string; author: string | null;
   published_at: string | null; snippet: string | null; collected_at: string;
+  ai_relevant: boolean | null;
+  ai_relevance_score: number | null;
+  ai_category: string | null;
+  ai_summary: string | null;
+  ai_analyzed_at: string | null;
 };
 
 export type ScanResult = {
@@ -71,4 +76,18 @@ export async function listItems(id: number, signal: AbortSignal): Promise<Collec
 export async function scanTopic(id: number, signal: AbortSignal): Promise<ScanResult> {
   // A scan includes the upstream YouTube request and database writes.
   return (await request(`/${id}/scan`, { method: "POST", signal }, 60000)).json();
+}
+
+export type AnalysisBatchResult = {
+  topic_id: number; processed: number; relevant: number; irrelevant: number; failed: number;
+};
+
+export async function analyzeItem(id: number, signal: AbortSignal): Promise<CollectedItem> {
+  return (await request(`/${id}/analyze`, { method: "POST", signal }, 150000,
+    "http://127.0.0.1:8000/api/items")).json();
+}
+
+export async function analyzeTopic(id: number, signal: AbortSignal): Promise<AnalysisBatchResult> {
+  // Up to ten sequential model calls, each with a backend timeout of 120 seconds.
+  return (await request(`/${id}/analyze?limit=10`, { method: "POST", signal }, 1250000)).json();
 }

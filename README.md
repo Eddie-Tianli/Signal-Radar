@@ -19,13 +19,21 @@ Completed:
 - Topic management page at `/topics`, including creation, editing, deletion, loading states, and error handling.
 - Per-Topic YouTube Scan button with fetched/new/duplicate counts and automatic Item list refresh.
 - Collected Item display with source, author, publication time, snippet, and original links.
+- Per-Item Analyze and Topic Analyze Unprocessed Items controls for local Ollama analysis, with independent errors, batch counts, and persisted AI results.
+- AI Analysis sections show relevance, score, category, explicitly AI-generated summaries, and analysis time beneath original content.
 
-Topic and Item storage use SQLAlchemy and local PostgreSQL. Configure the database account and apply the Alembic migrations before using Topic APIs; see [backend setup](backend/README.md). Manual collection requires `YOUTUBE_API_KEY` in the backend environment. AI and authentication are not implemented.
+Topic and Item storage use SQLAlchemy and local PostgreSQL. Configure the database account and apply the Alembic migrations before using Topic APIs; see [backend setup](backend/README.md). Real YouTube collection requires `YOUTUBE_API_KEY`; local tests can use MockSource. Local AI analysis requires Ollama and OLLAMA_MODEL; authentication is not implemented.
 
 The API metadata version remains `0.0.1`; the changelog tracks development milestones separately.
 
 Content Collection currently supports manual YouTube searches normalized into Items.
-RSS, Web Search, AI, Scheduler, and Digest remain unimplemented.
+RSS, Web Search, Scheduler, and Digest remain unimplemented.
+
+In a Topic's Item list, **Analyze** updates one Item immediately. **Analyze
+Unprocessed Items** processes up to 10 Items sequentially, displays success/failure
+counts, and refreshes saved results. Local inference can take several minutes.
+Unanalyzed Items show **Not analyzed**; failed requests display errors without
+removing existing results. Configure Ollama as described in Local Development.
 
 ## Local Development
 

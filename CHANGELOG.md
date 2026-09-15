@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Topic frontend single-Item and bounded batch AI analysis controls, per-Item errors, batch counts, and refreshed persisted results.
+- Clearly labeled AI-generated summaries, relevance scores/categories/timestamps, and unanalyzed state beneath original Item metadata.
 - Local AIProvider/OllamaProvider structured Item relevance and short-summary analysis, configured through environment variables.
 - Migration 0003 with nullable AI result fields and database score-range constraint.
 - Single-Item analysis and bounded sequential Topic analysis APIs, plus mocked provider/error tests and PostgreSQL persistence checks.
