@@ -23,7 +23,7 @@ async function request(path = "", options: RequestInit = {}, timeoutMs = 5000, b
     throw new Error("Cannot reach the backend. Check that it is running and try again.");
   }
   if (!response.ok) {
-    if (path.endsWith("/scan") || path.endsWith("/items") || path.includes("/analyze")) {
+    if (path.endsWith("/scan") || path.endsWith("/items") || path.includes("/analyze") || path.includes("/digest")) {
       const body = await response.json().catch(() => null);
       throw new Error(typeof body?.detail === "string" ? body.detail : `Request failed (HTTP ${response.status}).`);
     }
@@ -90,4 +90,17 @@ export async function analyzeItem(id: number, signal: AbortSignal): Promise<Coll
 export async function analyzeTopic(id: number, signal: AbortSignal): Promise<AnalysisBatchResult> {
   // Up to ten sequential model calls, each with a backend timeout of 120 seconds.
   return (await request(`/${id}/analyze?limit=10`, { method: "POST", signal }, 1250000)).json();
+}
+
+export type Digest = {
+  id: number; topic_id: number; title: string; summary: string;
+  item_count: number; generated_at: string;
+};
+
+export async function generateDigest(id: number, signal: AbortSignal): Promise<Digest> {
+  return (await request(`/${id}/digest`, { method: "POST", signal }, 150000)).json();
+}
+
+export async function listDigests(id: number, signal: AbortSignal): Promise<Digest[]> {
+  return (await request(`/${id}/digests`, { signal })).json();
 }

@@ -4,7 +4,8 @@
 
 PostgreSQL stores Topics and Items through SQLAlchemy. Alembic revision `0001`
 creates Topics; `0002_create_items.py` creates Items. `0003_item_ai_analysis.py`
-adds nullable AI analysis fields. Current head is `0003`.
+adds nullable AI analysis fields. `0004_create_digests.py` adds Digest history.
+Current head is `0004`.
 Previously applied migration files are preserved unchanged.
 
 ## Topics
@@ -62,7 +63,25 @@ still apply. `ck_items_ai_score` enforces the score range. Existing rows keep nu
 AI fields until analyzed. No source-specific columns are included. Downgrading
 0003 removes analysis fields/results, while retaining the original Items.
 
-## Migration and verification
+## Digests
+
+Topic 1:N Digest; each Digest references an existing Topic. Deleting a Topic
+cascades to its Digests, consistently with Items.
+
+| Field | PostgreSQL type | Rules |
+| --- | --- | --- |
+| id | integer / serial | Primary key |
+| topic_id | integer | Required FK, indexed |
+| title | varchar(200) | Required |
+| summary | text | Required, AI-generated |
+| item_count | integer | Number selected for this brief (1-20 through service) |
+| generated_at | timestamp with time zone | Required, database current time |
+
+History is sorted by generated_at DESC, id DESC. Briefs are saved text snapshots;
+no Item association table, embeddings or event IDs are added. Migration 0004
+preserves existing Topic/Item data; downgrading it removes Digest history.
+
+## Migration commands
 
 From backend with its virtual environment active:
 

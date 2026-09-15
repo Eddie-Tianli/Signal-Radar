@@ -44,6 +44,22 @@ and ai_analyzed_at. No pagination, filters, or sorting controls are provided.
 
 Swagger is available at http://127.0.0.1:8000/docs.
 
+## POST /api/topics/{topic_id}/digest
+
+No body. Uses up to 20 analyzed relevant Items and returns a saved Digest:
+```json
+{"id":1,"topic_id":1,"title":"Topic Brief","summary":"AI-generated content...","item_count":3,"generated_at":"2026-09-15T12:00:00Z"}
+```
+404: missing Topic. 409: no eligible Items (no AI call). Provider errors use the
+same 502/503/504 semantics as analysis, and database failures return sanitized 503.
+Each successful manual request creates a new snapshot; there is no automatic retry.
+
+## GET /api/topics/{topic_id}/digests
+
+Returns an array of complete Digests ordered by generated_at DESC, id DESC.
+Existing Topic without history returns []; missing Topic returns 404. No pagination
+or standalone detail endpoint is implemented. All summaries are AI-generated.
+
 ## POST /api/items/{item_id}/analyze
 
 No body. Analyzes one saved Item against its Topic and returns HTTP 200 with the

@@ -27,7 +27,15 @@ Topic and Item storage use SQLAlchemy and local PostgreSQL. Configure the databa
 The API metadata version remains `0.0.1`; the changelog tracks development milestones separately.
 
 Content Collection currently supports manual YouTube searches normalized into Items.
-RSS, Web Search, Scheduler, and Digest remain unimplemented.
+Topic Digests and an opt-in local Scheduler are implemented. RSS, Web Search,
+notifications, and final UI redesign remain unimplemented.
+
+Use **Generate Digest** after analyzing relevant Items, and **View Digest History**
+to read persisted briefs. Digests are explicitly AI-generated. The Scheduler is
+disabled by default; enable it only in a single backend process without reload.
+It scans enabled Topics, analyzes up to 20 pending Items per Topic, and creates a
+Digest only when that run successfully analyzes a new relevant Item. See
+[local development](docs/development/local-development) for configuration and shutdown.
 
 In a Topic's Item list, **Analyze** updates one Item immediately. **Analyze
 Unprocessed Items** processes up to 10 Items sequentially, displays success/failure

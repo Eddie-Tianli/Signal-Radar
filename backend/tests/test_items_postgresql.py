@@ -18,6 +18,8 @@ from app.collection.mock import MockSource
 from app.collection.service import CollectionService
 from app.ai.service import AnalysisService
 from app.ai.schemas import AnalysisResult
+from app.digests.service import DigestService
+from app.digests.schemas import DigestResult
 
 
 @pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Set RUN_POSTGRES_TESTS=1 after migrating local PostgreSQL")
@@ -104,6 +106,9 @@ def test_postgresql_mock_scan():
                 assert (second.fetched, second.created, second.duplicates) == (3, 0, 3)
                 assert len(ItemService(session).list_recent_topic_items(topic.id)) == 3
                 class FakeAI:
+                    def digest(self, data):
+                        return DigestResult(title="Local brief", summary="AI-generated test brief.")
+
                     def analyze(self, data):
                         return AnalysisResult(relevant=False, relevance_score=0.1,
                                               category="other", summary="Mock summary.")
@@ -117,5 +122,11 @@ def test_postgresql_mock_scan():
                     with session.begin_nested():
                         session.get(ItemRecord, item_id).ai_relevance_score = 1.5
                         session.flush()
+                session.get(ItemRecord, item_id).ai_relevant = True
+                session.commit()
+                digest = DigestService(session, FakeAI()).generate(topic.id)
+                session.expire_all()
+                assert DigestService(session, FakeAI()).history(topic.id)[0].id == digest.id
+                assert digest.item_count == 1 and digest.generated_at.utcoffset() is not None
         finally:
             transaction.rollback()

@@ -7,11 +7,17 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.items.models import ItemRecord
+    from app.digests.models import DigestRecord
 
 
 def _item_model():
     from app.items.models import ItemRecord
     return ItemRecord
+
+
+def _digest_model():
+    from app.digests.models import DigestRecord
+    return DigestRecord
 
 
 class TopicRecord(Base):
@@ -25,3 +31,4 @@ class TopicRecord(Base):
     items: Mapped[list["ItemRecord"]] = relationship(
         _item_model, back_populates="topic", passive_deletes="all"
     )
+    digests: Mapped[list["DigestRecord"]] = relationship(_digest_model, back_populates="topic", passive_deletes="all")

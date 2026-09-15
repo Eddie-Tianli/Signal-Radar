@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { analyzeItem, analyzeTopic, listItems, scanTopic, type AnalysisBatchResult, type CollectedItem, type ScanResult } from "./api";
 import ItemList from "./ItemList";
+import TopicDigests from "./TopicDigests";
 
 export default function TopicContent({ topicId }: { topicId: number }) {
   const [open, setOpen] = useState(false);
@@ -140,6 +141,7 @@ export default function TopicContent({ topicId }: { topicId: number }) {
         {!!batchResult?.failed && <p role="alert" className="text-sm text-red-700">Some items could not be analyzed. Check local Ollama, or Analyze an individual item for details.</p>}
         {open && (loading ? <p role="status">Loading items...</p> : error ? <p role="alert" className="text-sm text-red-700">Could not load items: {error}</p> : <ItemList items={items} analyzing={analyzing} errors={analysisErrors} batchAnalyzing={batchAnalyzing || scanning} onAnalyze={(id) => void analyze(id)} />)}
       </div>
+      <TopicDigests topicId={topicId} />
     </section>
   );
 }

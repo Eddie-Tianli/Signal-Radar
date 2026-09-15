@@ -4,9 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.topics.router import router as topics_router
 from app.collection.router import router as collection_router
 from app.ai.router import router as ai_router
+from app.digests.router import router as digests_router
+from app.scheduler.lifecycle import lifespan
 
 
-app = FastAPI(title="SignalRadar API", version="0.0.1")
+app = FastAPI(title="SignalRadar API", version="0.0.1", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -16,6 +18,7 @@ app.add_middleware(
 app.include_router(topics_router)
 app.include_router(collection_router)
 app.include_router(ai_router)
+app.include_router(digests_router)
 
 
 @app.get("/")

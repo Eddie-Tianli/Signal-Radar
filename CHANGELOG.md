@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Topic Digest model and migration 0004, structured generation from up to 20 analyzed relevant Items, history APIs and frontend controls.
+- Default-off local sequential Scheduler with configurable interval, enabled-Topic selection, pending-only analysis, new-relevance Digest gate, overlap protection and sanitized logs.
+- Fake-provider Digest/Scheduler tests and local PostgreSQL Digest persistence checks.
 - Topic frontend single-Item and bounded batch AI analysis controls, per-Item errors, batch counts, and refreshed persisted results.
 - Clearly labeled AI-generated summaries, relevance scores/categories/timestamps, and unanalyzed state beneath original Item metadata.
 - Local AIProvider/OllamaProvider structured Item relevance and short-summary analysis, configured through environment variables.

@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, pool
 from app.database import Base, database_url
 from app.topics.models import TopicRecord  # noqa: F401
 from app.items.models import ItemRecord  # noqa: F401
+from app.digests.models import DigestRecord  # noqa: F401
 
 
 if context.is_offline_mode():

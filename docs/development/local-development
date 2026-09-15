@@ -89,7 +89,52 @@ paths. Optional PostgreSQL checks validate AI field persistence and score constr
 No AI frontend controls have been added; use Swagger for this stage.
 Structured output reference: https://docs.ollama.com/capabilities/structured-outputs
 
-## Frontend usage
+## Digest and automatic workflow
+
+1. Configure USE_MOCK_SOURCE=true and SCHEDULER_ENABLED=false in backend/.env.
+2. Start Ollama, check `ollama list`, and set OLLAMA_MODEL to an installed local
+   model's exact name. OLLAMA_BASE_URL defaults to http://localhost:11434.
+3. Activate backend/.venv; run `python -m alembic upgrade head`,
+   `python -m alembic current` (0004 head), and `python -m alembic check`.
+4. Start backend with `uvicorn app.main:app` and frontend with `npm run dev`.
+5. Create a Topic, Scan, and Analyze. At least one Item must be marked relevant;
+   model judgments can legitimately leave none. Generate Digest then shows 409.
+6. Click Generate Digest. Read the AI-generated label, title, count, time and summary.
+   View Digest History loads saved snapshots. API equivalents are POST
+   /api/topics/{id}/digest and GET /api/topics/{id}/digests.
+7. Restart the backend and reload history to verify persistence.
+8. For automation, create a fresh enabled Topic with a unique query, then stop the
+   backend. Set SCHEDULER_ENABLED=true and SCAN_INTERVAL_MINUTES=1 for a local test.
+   Restart with `uvicorn app.main:app` (one process, no --reload/--workers).
+9. Wait one minute plus inference time. Logs show Topic ID, scan counts, analysis
+   counts and Digest created/skipped. Refresh Items and View Digest History.
+10. A second unchanged Mock scan creates no new Items, reanalyzes none and skips
+    Digest generation. Only enabled Topics are processed. Previous pending Items
+    can be analyzed in later runs, up to 20 per Topic per cycle.
+
+Safe shutdown: press Ctrl+C and wait for the current external request to finish
+or time out (Ollama timeout 120 seconds). No next Item/Topic is started after the
+stop signal. Set SCHEDULER_ENABLED=false and restart to keep manual APIs available.
+Environment variables override .env; clear or change an existing process-level
+SCHEDULER_ENABLED setting too. Interval accepts 0.1-10080 minutes, default 60.
+The first run waits the full interval and each next run waits after completion.
+Do not run multiple backend processes or manual workflows concurrently with the
+scheduler. It is a single-process local feature, with no distributed locking.
+
+Offline tests need neither Ollama nor YouTube. From backend:
+```powershell
+python -m pytest tests/test_digests.py tests/test_scheduler.py -q -p no:cacheprovider --basetemp "$env:TEMP\sr-digest-$([guid]::NewGuid().ToString('N'))"
+$env:RUN_POSTGRES_TESTS='1'
+python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\sr-all-$([guid]::NewGuid().ToString('N'))"
+Remove-Item Env:\RUN_POSTGRES_TESTS
+```
+These use FakeAI/MockTransport and direct run_cycle calls, never permanent scheduler
+threads. Tests forcibly suppress scheduler startup even if local .env enables it.
+MockSource supplies fake content, not fake AI: the normal browser workflow still
+requires Ollama. Scheduler Digest failure after successful analysis can be recovered
+with manual Generate Digest; no persistent retry queue is implemented.
+
+## Frontend startup
 
 In another terminal, run npm run dev from frontend/. Topic management remains at
 http://localhost:3000/topics. Use Scan to collect and View items / Refresh items
