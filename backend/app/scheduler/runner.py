@@ -11,6 +11,7 @@ from app.collection.service import CollectionService
 from app.ai.ollama import get_ai_provider
 from app.ai.service import AnalysisService
 from app.digests.service import DigestService
+from app.notifications.service import notify_safely, get_notification_service
 
 log = logging.getLogger("uvicorn.error")
 job_lock = Lock()
@@ -23,7 +24,7 @@ def resources():
             yield session, source, provider
 
 
-def run_cycle(resource_factory=resources, stop=None):
+def run_cycle(resource_factory=resources, stop=None, notification_factory=get_notification_service):
     stop = stop or Event()
     if not job_lock.acquire(blocking=False):
         log.info("Scheduler job skipped: previous job still running")
@@ -39,9 +40,10 @@ def run_cycle(resource_factory=resources, stop=None):
                     topic = session.get(TopicRecord, topic_id)
                     if topic is None or not topic.enabled:
                         continue
-                    log.info("Topic %s scan started", topic_id)
+                    topic_name = topic.name
+                    log.info("Topic %s job started; scan started", topic_id)
                     scan = CollectionService(session, source).scan(topic_id)
-                    log.info("Topic %s Fetched %s Created %s", topic_id, scan.fetched, scan.created)
+                    log.info("Topic %s Scan completed Fetched %s Created %s", topic_id, scan.fetched, scan.created)
                     # Bounded backlog: only currently unanalyzed Items, never reanalyze successes.
                     pending = list(session.scalars(select(ItemRecord.id).where(
                         ItemRecord.topic_id == topic_id, ItemRecord.ai_analyzed_at.is_(None)
@@ -53,10 +55,11 @@ def run_cycle(resource_factory=resources, stop=None):
                         item = AnalysisService(session, provider).analyze(item_id)
                         analyzed += 1
                         relevant += int(item.ai_relevant)
-                    log.info("Topic %s Analyzed %s Relevant %s", topic_id, analyzed, relevant)
+                    log.info("Topic %s Analysis completed Analyzed %s Relevant %s", topic_id, analyzed, relevant)
                     if relevant and not stop.is_set():
                         digest = DigestService(session, provider).generate(topic_id)
                         log.info("Topic %s Digest created %s", topic_id, digest.id)
+                        notify_safely(topic_id, topic_name, relevant, notification_factory)
                     else:
                         log.info("Topic %s Digest skipped", topic_id)
                     log.info("Topic %s job completed", topic_id)

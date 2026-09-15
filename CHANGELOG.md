@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Optional Windows toast notifications through an isolated NotificationService after successful automatic Digests with new relevant Items; notification failure never fails the job.
+- Windows one-command local launcher with dependency/port/migration checks, production frontend, graceful backend shutdown and bounded rotating logs.
+- Backward-compatible dependency states in /api/status, startup health logs, and Fake notification/health tests without real popups.
 - Topic Digest model and migration 0004, structured generation from up to 20 analyzed relevant Items, history APIs and frontend controls.
 - Default-off local sequential Scheduler with configurable interval, enabled-Topic selection, pending-only analysis, new-relevance Digest gate, overlap protection and sanitized logs.
 - Fake-provider Digest/Scheduler tests and local PostgreSQL Digest persistence checks.

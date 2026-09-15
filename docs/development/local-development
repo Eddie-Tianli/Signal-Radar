@@ -1,5 +1,67 @@
 # Local development
 
+## Local Usage (Windows)
+
+Startup order: **PostgreSQL → Ollama → SignalRadar**. PostgreSQL may already run as
+a Windows service. Start it through your existing service setup if needed. Start
+Ollama from its desktop application or `ollama serve`; do not start a second copy
+when it already runs. Check `ollama list` for the configured model. The launcher
+does not start these services or change Windows configuration.
+
+One-time setup: create backend/.venv and install requirements-dev.txt, configure
+backend/.env, run `python -m alembic upgrade head` from backend/, and `npm install`
+from frontend/. Node.js/npm must be on PATH.
+
+From repository root:
+```powershell
+.\start-signalradar.ps1 -CheckOnly
+.\start-signalradar.ps1
+```
+The script checks venv, .env, node_modules, Node/npm, database connectivity, migration
+0004, ports 8000/3000 and local Ollama /api/tags. It builds Next.js and starts the
+production frontend plus single-process backend. Use -SkipBuild only when the current
+frontend build exists and code has not changed. No install or migration runs silently.
+If PowerShell policy blocks the script, use an allowed local script policy according
+to your machine setup; this script never changes execution policy automatically.
+
+Ollama missing logs: `Ollama unavailable - AI analysis will fail until Ollama is started.`
+The app still starts. PostgreSQL or required files missing blocks launch with a repair
+message. Visit http://localhost:3000 and http://127.0.0.1:8000/api/status. The latter
+keeps name/version/status and adds database, ollama, scheduler, notifications. Ollama
+available means its API responds, not that OLLAMA_MODEL is configured/installed.
+Scheduler status reflects actual startup; notifications reflects its configured switch.
+
+Keep the launcher terminal open. Ctrl+C waits for in-flight work to finish or time out,
+then stops the frontend process tree it owns. Do not force-close during writes.
+Runtime logs are in logs/signalradar.log (2 MB rotation, three backups); the directory
+is ignored by Git. Existing secrets are not logged. Windows sleep pauses operation;
+there is no boot/login auto-start or service installation.
+
+### Windows notification verification
+
+1. Start PostgreSQL and Ollama; set USE_MOCK_SOURCE=true and the correct OLLAMA_MODEL.
+2. Set SCHEDULER_ENABLED=true, SCAN_INTERVAL_MINUTES=1 and NOTIFICATIONS_ENABLED=true.
+3. Run the launcher, create a fresh enabled Topic with a unique name, then wait for
+   the first scheduled cycle plus local inference time. Avoid manual analysis in parallel.
+4. When a new relevant Item leads to a saved Digest, expect one SignalRadar toast
+   containing the Topic and relevant count. Windows groups it under Windows PowerShell.
+   If the model judges everything irrelevant there is correctly no toast.
+5. Confirm Digest history and logs: Scan completed, Analysis completed, Digest created,
+   Notification sent, Topic job completed. The next unchanged Mock cycle should skip
+   Digest and send nothing. A failed model/Digest call only logs failure.
+6. Disable NOTIFICATIONS_ENABLED, restart and test a new Topic: the workflow still
+   saves its Digest but no toast is sent. Windows Focus Assist/notification preferences
+   may suppress banners even when delivery succeeds; check Notification Center.
+7. Safely disable automatic work with Ctrl+C, then SCHEDULER_ENABLED=false and restart.
+
+Only scheduled successful new Digests notify; manual Generate Digest does not. Toast
+failures log Notification failed and still complete the Topic job. For a non-popup
+Windows payload check:
+```powershell
+'{"topic":"Local test","count":3}' | powershell -NoProfile -NonInteractive -File backend/app/notifications/toast.ps1 -ValidateOnly
+```
+All automated tests force real notification sending off and use FakeNotification.
+
 ## PostgreSQL and backend
 
 Follow backend/README.md to configure local PostgreSQL and backend/.env. From the

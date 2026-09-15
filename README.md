@@ -28,7 +28,31 @@ The API metadata version remains `0.0.1`; the changelog tracks development miles
 
 Content Collection currently supports manual YouTube searches normalized into Items.
 Topic Digests and an opt-in local Scheduler are implemented. RSS, Web Search,
-notifications, and final UI redesign remain unimplemented.
+Email/mobile notifications and final UI redesign remain unimplemented.
+
+Windows local notifications are available as an opt-in feature after successful
+automatic Digest generation with new relevant content. Notifications default off.
+
+## Local Usage (Windows)
+
+Start local PostgreSQL first, then Ollama (optional for browsing/collection), then
+run `./start-signalradar.ps1` from PowerShell in the repository root. It checks the
+environment, database/migrations, Ollama and ports, builds Next.js, and starts both
+servers on loopback in one terminal. Keep that terminal open; Ctrl+C shuts down
+the backend gracefully and stops its frontend child process. No services or system
+settings are created or changed.
+
+Use `./start-signalradar.ps1 -CheckOnly` to validate without starting servers, or
+`-SkipBuild` to reuse an existing frontend build when code has not changed.
+Ollama unavailability is a warning; AI actions need it later. PostgreSQL failure
+blocks the launcher with a setup message. `/api/status` reports dependency states
+without credentials. Runtime logs rotate in ignored `logs/signalradar.log`.
+
+For automatic local use, configure `SCHEDULER_ENABLED=true` and optionally
+`NOTIFICATIONS_ENABLED=true` in backend/.env. Windows notifications require a
+logged-in desktop session and allowed Windows PowerShell notifications. The banner
+contains SignalRadar and the Topic; Windows may group it under Windows PowerShell.
+See [Local Development](docs/development/local-development) for checks and shutdown.
 
 Use **Generate Digest** after analyzing relevant Items, and **View Digest History**
 to read persisted briefs. Digests are explicitly AI-generated. The Scheduler is

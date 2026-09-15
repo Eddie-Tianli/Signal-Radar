@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Event, Thread
 from dotenv import load_dotenv
 from app.scheduler.runner import run_cycle, log
+from app.health import dependency_status, log_dependencies
 
 
 class LocalScheduler:
@@ -51,10 +52,18 @@ def configured_scheduler():
 @asynccontextmanager
 async def lifespan(app):
     scheduler = configured_scheduler()
+    if app is not None:
+        app.state.scheduler_enabled = scheduler is not None
+    log.info("SignalRadar started")
+    if "pytest" not in sys.modules:
+        log_dependencies(await asyncio.to_thread(dependency_status))
     if scheduler:
         scheduler.start()
+    else:
+        log.info("Scheduler disabled")
     try:
         yield
     finally:
         if scheduler:
             await asyncio.to_thread(scheduler.stop)
+        log.info("SignalRadar stopped")

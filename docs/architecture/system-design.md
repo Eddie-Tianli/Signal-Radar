@@ -46,7 +46,33 @@ fake key; local PostgreSQL tests use rollback-only test data and no YouTube call
 A real YouTube smoke test requires a user-configured key and is manual.
 
 No RSS, Web Search, embeddings, semantic deduplication, clustering, crawling,
-or notifications are implemented.
+or remote notifications are implemented.
+
+## Local operation and Windows notifications
+
+Successful scheduler Digest commit → NotificationService → WindowsNotificationService
+→ local Windows toast. A notification requires new relevance AND a saved new Digest;
+manual generation, unchanged runs and failed jobs do not notify. This conservative
+completion rule avoids notifications without a ready brief. The default-off
+NOTIFICATIONS_ENABLED switch disables only delivery. Factory/send failures are
+caught separately, log Topic ID only, and do not undo business writes or fail jobs.
+
+Windows delivery uses a fixed PowerShell script and built-in WinRT ToastNotificationManager.
+Topic text is passed as stdin JSON and inserted using XML text nodes, never shell
+interpolation. PowerShell runs hidden with a 10-second timeout. The existing Windows
+PowerShell Start-menu identity is reused; no registry, service or shortcut changes.
+An interactive Windows session is required. Windows notification preferences/Focus
+Assist may suppress a popup; sent means the Windows delivery call returned, not
+proof the user saw a banner. No remote notification transport is implemented.
+
+start-signalradar.ps1 validates local prerequisites, builds Next.js and invokes the
+Python local runtime. Uvicorn runs once in the foreground without reload; the Next
+production child binds loopback and streams logs to standard logging. Ctrl+C lets
+FastAPI stop its scheduler before cleaning up the owned frontend process tree.
+Logs rotate at 2 MB with three backups. The launcher does not install/start services,
+register auto-start, keep Windows awake, or recover after reboot. Keep its terminal
+and logged-in Windows session open. Status probes use SELECT 1 and local Ollama tags,
+never inference; they use bounded timeouts and return sanitized states only.
 
 ## Topic Digest and local Scheduler
 
