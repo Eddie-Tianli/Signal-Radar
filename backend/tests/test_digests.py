@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.ai.provider import AIError
 from app.ai.schemas import AnalysisResult
 from app.ai.ollama import OllamaProvider, get_ai_provider
-from app.digests.schemas import DigestResult
+from app.digests.schemas import DigestInput, DigestResult
 from app.digests.service import DigestService, NoRelevantItems
 from app.items.models import ItemRecord
 from app.topics.models import TopicRecord
@@ -163,3 +163,81 @@ def test_only_irrelevant_or_unanalyzed_items_do_not_call_ollama(engine):
         with pytest.raises(NoRelevantItems, match="No analyzed relevant Items"):
             service.generate(1)
         assert service.history(1) == []
+
+
+@pytest.mark.parametrize("content", [
+    '{"title":"中文简报","summary":"最新进展。"}',
+    '```json\n{"title":"中文简报","summary":"最新进展。"}\n```',
+    '```\n{"title":"中文简报","summary":"最新进展。"}\n```',
+    '简报如下：\n{"title":"中文简报","summary":"最新进展。"}\n以上为简报。',
+    '说明 {不是 JSON}：{"title":"中文简报","summary":"最新进展。"}',
+    '{"title":"中文简报","summary":"含有 {括号} 和 \\"引号\\"。"}',
+])
+def test_digest_json_and_wrapped_objects(content):
+    calls = []
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        assert body["format"] == DigestResult.model_json_schema()
+        assert body["options"]["temperature"] == 0 and body["stream"] is False
+        return httpx.Response(200, json={"message": {"content": content}})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = OllamaProvider(client, "http://localhost:11434", "fake").digest(
+            DigestInput(topic_name="测试", topic_description=None, items=[]))
+    assert result.title == "中文简报" and result.summary
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("invalid", [
+    'PRIVATE_MODEL_OUTPUT: not JSON',
+    '{"title":"缺少摘要"}',
+    '{"title":123,"summary":"类型错误"}',
+    '{"title":"类型错误","summary":["不能是数组"]}',
+    '{"title":"额外字段","summary":"摘要","extra":"不接受"}',
+    '说明：{"title":123,"summary":"无效"} {"title":"不能跳过首个对象","summary":"摘要"}',
+])
+@pytest.mark.parametrize("retry_succeeds", [True, False])
+def test_digest_retry_once_and_validates_before_saving(engine, caplog, invalid, retry_succeeds):
+    caplog.set_level("INFO", logger="uvicorn.error")
+    calls = []
+    valid = '{"title":"中文简报","summary":"已修复的简报。"}'
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        assert body["format"] == DigestResult.model_json_schema()
+        assert body["options"]["temperature"] == 0 and body["stream"] is False
+        if len(calls) == 2:
+            assert "只返回合法 JSON，不要 Markdown，不要解释，不要前后文字" in body["messages"][0]["content"]
+            assert body["messages"][1] == calls[0]["messages"][1]
+        output = valid if retry_succeeds and len(calls) == 2 else invalid
+        return httpx.Response(200, json={"message": {"content": output}})
+    with Session(engine) as session, httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        add_item(session, 1)
+        session.commit()
+        service = DigestService(session, OllamaProvider(client, "http://localhost:11434", "fake"))
+        if retry_succeeds:
+            result = service.generate(1)
+            assert result.title == "中文简报"
+            assert service.history(1) == [result]
+        else:
+            with pytest.raises(AIError) as error:
+                service.generate(1)
+            assert error.value.status_code == 502
+            assert str(error.value) == "Ollama returned invalid structured analysis. Retry or check model support."
+            assert service.history(1) == []
+    assert len(calls) == 2
+    assert "parse failure" in caplog.text and "retry (1 of 1)" in caplog.text
+    assert "PRIVATE_MODEL_OUTPUT" not in caplog.text
+    assert invalid not in caplog.text
+
+
+def test_digest_http_failure_is_not_a_parse_retry():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(500, text="PRIVATE_UPSTREAM_ERROR")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(AIError, match="Ollama analysis failed"):
+            OllamaProvider(client, "http://localhost:11434", "fake").digest(
+                DigestInput(topic_name="测试", topic_description=None, items=[]))
+    assert len(calls) == 1
