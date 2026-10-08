@@ -22,10 +22,23 @@ class OllamaProvider(AIProvider):
 
     def digest(self, data: DigestInput) -> DigestResult:
         return self._request(data, DigestResult,
-            "Write a personal intelligence brief, not an article or mechanical item-by-item list. "
-            "Use only the supplied Item summaries and metadata; do not add facts. "
-            "Prioritize important new information and merge obvious repeated information. "
-            "Keep the summary moderate, about 2-5 short paragraphs. Clearly label it AI-generated content.")
+            "Write a personal intelligence brief. 你是一名中文情报简报编辑，直接撰写面向读者的简报。"
+            "title 使用简短中文标题；summary 使用中文写成 3–6 个简短自然段或若干条重点，"
+            "即使来源是英文也必须用中文，OpenAI、GPT-6、API 等专有名词可保留英文。"
+            "只依据 items 中的 title、source、author、published_at、ai_category、"
+            "ai_relevance_score、ai_summary；Topic 仅用于确定关注范围，不作为事件事实。"
+            "不加入外部事实，不推测未提供的背景、因果、日期或结论。"
+            "对未经证实或不确定的说法使用‘有信息提到’‘部分来源称’等表述，保留原有不确定性。"
+            "优先总结较高 ai_relevance_score、较新及重复出现的重要进展，合并重复信息，"
+            "但重复出现不等于独立证实；来源相互矛盾时明确区别，不擅自裁定。"
+            "围绕最新进展、主要事件组织内容；仅在有依据时纳入争议或风险与值得继续关注的方向。"
+            "内容不足时简短呈现，不为凑段落编造事实，不逐条机械复述。"
+            "不要解释任务、描述用户意图、分析用户想要什么或描述数据格式。"
+            "禁止出现 prompt、metadata、provided items、input、the user is interested in、"
+            "the user wants、provided metadata、based on the provided，以及‘根据提供的信息’等元话语。"
+            "直接以事件或进展开头，不写前言、推理过程、任务说明或结语套话。"
+            "AI 生成标记由界面负责，不在简报正文重复添加声明。"
+            "仅返回符合 schema 的 JSON，包含 title 和 summary。")
 
     def _request(self, data, schema, instruction):
         if not self.model:

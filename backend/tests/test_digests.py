@@ -109,14 +109,57 @@ def test_digest_api(scan_client):
         app.dependency_overrides.pop(get_ai_provider, None)
 
 
-def test_ollama_digest_schema(engine):
+def test_ollama_digest_chinese_brief_from_english_items(engine):
+    result = {
+        "title": "OpenAI API 更新进展",
+        "summary": "有信息提到，OpenAI 发布了 API 更新。\n\n"
+                   "主要进展是接口响应速度有所改善，具体效果尚待确认。\n\n"
+                   "后续值得关注实际使用中的响应表现。",
+    }
     def handler(request):
         body = json.loads(request.content)
         assert body["format"] == DigestResult.model_json_schema()
-        assert "personal intelligence brief" in body["messages"][0]["content"]
-        assert "snippet" not in body["messages"][1]["content"]
-        return httpx.Response(200, json={"message": {"content": '{"title":"Brief","summary":"AI-generated test."}'}})
+        instruction = body["messages"][0]["content"]
+        assert "即使来源是英文也必须用中文" in instruction
+        assert "不要解释任务、描述用户意图" in instruction
+        assert "不加入外部事实" in instruction
+        assert "合并重复信息" in instruction
+        assert "ai_relevance_score、较新及重复出现" in instruction
+        assert "有信息提到" in instruction and "部分来源称" in instruction
+        for phrase in ("the user is interested in", "the user wants", "provided metadata",
+                       "based on the provided", "根据提供的信息"):
+            assert phrase in instruction.split("禁止出现", 1)[1]
+        assert body["options"]["temperature"] == 0
+        content = json.loads(body["messages"][1]["content"])
+        assert set(content["items"][0]) == {
+            "title", "source", "author", "published_at", "ai_category",
+            "ai_relevance_score", "ai_summary",
+        }
+        assert content["items"][0]["ai_summary"] == "OpenAI announced an API update with reportedly faster responses."
+        return httpx.Response(200, json={"message": {"content": json.dumps(result, ensure_ascii=False)}})
     with Session(engine) as session, httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        add_item(session, 1)
+        item = add_item(session, 1)
+        item.title = "OpenAI API update"
+        item.ai_summary = "OpenAI announced an API update with reportedly faster responses."
+        item.ai_relevance_score = 0.9
         session.commit()
-        assert DigestService(session, OllamaProvider(client, "http://localhost:11434", "fake")).generate(1).title == "Brief"
+        digest = DigestService(session, OllamaProvider(client, "http://localhost:11434", "fake")).generate(1)
+        assert digest.title == result["title"] and digest.summary == result["summary"]
+        assert any("\u4e00" <= char <= "\u9fff" for char in digest.title)
+        for phrase in ("the user wants", "the user is interested in", "provided metadata",
+                       "based on the provided", "根据提供的信息"):
+            assert phrase not in (digest.title + digest.summary).lower()
+        assert DigestService(session, FakeAI()).history(1)[0].summary == result["summary"]
+
+
+def test_only_irrelevant_or_unanalyzed_items_do_not_call_ollama(engine):
+    def handler(request):
+        pytest.fail("No eligible Items must not trigger an Ollama request")
+    with Session(engine) as session, httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        add_item(session, 1, relevant=False)
+        add_item(session, 2, analyzed=False)
+        session.commit()
+        service = DigestService(session, OllamaProvider(client, "http://localhost:11434", "fake"))
+        with pytest.raises(NoRelevantItems, match="No analyzed relevant Items"):
+            service.generate(1)
+        assert service.history(1) == []
