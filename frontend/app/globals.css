@@ -1,23 +1,46 @@
 @import "tailwindcss";
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f5f7fa;
-  color: #172033;
-  line-height: 1.6;
+@theme {
+  --color-canvas: #f6f7f4;
+  --color-surface: #ffffff;
+  --color-ink: #203532;
+  --color-muted: #687c76;
+  --color-line: #e0e7e2;
+  --color-accent: #226c5d;
+  --color-accent-soft: #edf5f0;
+  --font-sans: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
 }
 
 @layer base {
-  button { cursor: pointer; font-weight: 500; }
-  button:disabled { cursor: not-allowed; opacity: .5; }
-  :focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
-  input, textarea { background: white; }
-  [role="alert"] { background: #fff1f2; border-left: 3px solid #e11d48; padding: .65rem .85rem; border-radius: .35rem; }
-  [role="status"] { color: #475569; padding: .5rem 0; }
+  body { @apply bg-canvas text-ink font-sans; line-height: 1.6; }
+  button, summary { cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: .45; }
+  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
+  ::selection { background: #cde5d8; }
+  input, textarea, select { @apply min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm; }
+  textarea { resize: vertical; }
+  h1, h2, h3, h4 { text-wrap: balance; }
+  a, p, h1, h2, h3, h4 { overflow-wrap: anywhere; }
+  [role="alert"] { @apply rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800; }
 }
 
 @layer components {
-  .panel { @apply rounded-xl border border-slate-200 bg-white p-5 sm:p-6; }
-  .eyebrow { @apply text-xs font-semibold uppercase tracking-wider text-slate-500; }
-  .badge { @apply inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium; }
+  .page { @apply mx-auto max-w-7xl px-5 py-8 sm:px-9 lg:py-10; }
+  .page-heading { @apply mb-8 flex flex-wrap items-end justify-between gap-4; }
+  .page-title { @apply text-3xl font-semibold tracking-tight; }
+  .page-description { @apply mt-2 text-sm leading-relaxed text-muted; }
+  .panel { @apply rounded-2xl border border-line bg-surface p-5 sm:p-6; box-shadow: 0 2px 5px #1c3e3003; }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[.15em] text-muted; }
+  .btn { @apply inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium text-ink hover:bg-canvas; }
+  .btn-primary { @apply border-accent bg-accent text-white hover:bg-accent/90; }
+  .btn-quiet { @apply border-transparent bg-transparent text-muted hover:bg-canvas; }
+  .btn-danger { @apply border-red-100 text-red-700 hover:bg-red-50; }
+  .badge { @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-[11px] font-medium text-muted; }
+  .badge-active { @apply border-accent/10 bg-accent-soft text-accent; }
+  .notice { @apply rounded-lg border border-accent/15 bg-accent-soft px-4 py-3 text-sm text-accent; }
+  .empty { @apply rounded-xl border border-dashed border-line bg-canvas/50 px-6 py-9 text-center text-sm leading-7 text-muted; }
+  .text-link { @apply text-sm font-medium text-accent underline decoration-accent/25 underline-offset-4 hover:decoration-accent; }
+  .field-label { @apply mb-1.5 block text-sm font-medium; }
+  .reader { @apply whitespace-pre-wrap break-words text-[15px] leading-[1.95] text-ink/85; }
+  .section-title { @apply text-base font-semibold; }
 }

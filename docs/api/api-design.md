@@ -43,7 +43,7 @@
 
 ## POST /api/topics/{topic_id}/digest
 
-无 request body，最多使用 20 条已分析且相关的 Item，返回已保存的完整 Digest：
+无 request body，最多使用 10 条已分析、相关且 ai_summary 非空的 Item，返回已保存的完整 Digest：
 
 ```json
 {"id":1,"topic_id":1,"title":"Topic Brief","summary":"AI-generated content...","item_count":3,"generated_at":"2026-09-15T12:00:00Z"}
@@ -78,3 +78,23 @@ relevant 为严格 boolean；relevance_score 必须有限且在 [0,1]；category
 ```
 
 processed 表示成功数，等于 relevant + irrelevant；failed 为 Provider 失败数，尝试数为 processed + failed。部分 Provider 失败仍返回 HTTP 200，failed 非零；可单条重试查看详细原因。之前成功的内容已经保存，不因后续失败撤销；数据库失败返回 503。批量接口同步执行，可能需要数分钟，没有自动重试或后台队列；Scheduler 是独立的调用方。
+
+## v0.1.1 POST /api/topics/{topic_id}/update
+
+新增接口，无 body；原有 API endpoint 和 JSON contract 保留。Topic 不存在返回 404，同一 Topic 已有写操作返回 409。成功开始响应后使用 application/x-ndjson，每行一个 UpdateProgress。
+
+```json
+{"topic_id":1,"status":"running","stage":"scan","completed_steps":[],"fetched":0,"created":0,"duplicates":0,"processed":0,"relevant":0,"irrelevant":0,"failed":0,"pending_remaining":0,"digest":null,"digest_skipped":null,"error":null,"failed_stage":null}
+```
+
+stage 为 scan / analyze / digest / complete；status 为 running / completed / partial / failed。completed_steps 表示已执行阶段；failed_stage 明确失败位置，单条分析失败可能在完成其他阶段后仍保留。processed 为分析成功数，failed 为失败数。每次最多分析 20 条未处理 Item。pending_remaining 非零时可再次更新。
+
+终态包含完整新 Digest 或 digest=null；digest_skipped 给出无新增摘要、无合格摘要或停止等原因。无变化不创建重复简报。首次成功分析但简报失败后，再次更新可以仅合并已有新摘要，不重复分析。
+
+HTTP 200 只表示进度流已开始，不代表全部阶段成功，客户端必须读取终态 status。连接中断时状态未知，应刷新已保存结果；没有后台任务轮询或永久队列。无原始 traceback、Key 或模型原文写入该响应。前端对已知 error 映射中文。
+
+扫描、分析、Digest、编辑和删除与一键更新共用进程内 Topic 锁，忙碌返回 409；读取仍可用。手动单条重新分析仍允许覆盖旧结果，自动更新仅处理尚未分析内容。
+
+GET /api/dashboard 保留原字段，新增 analyzed_items 以及 topics（id、name、enabled、item_count、last_collected_at），用于真实数量及最近采集时间展示。未新增数据库表。
+
+Digest 的 Ollama 调用超时每次 180 秒，空 content 返回明确错误；最多一次重试，不改变 DigestResult Schema。

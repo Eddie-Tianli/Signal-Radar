@@ -9,6 +9,11 @@ export type TopicInput = Omit<Topic, "id">;
 
 // 只转换展示文案，不改变后端响应、HTTP 状态或请求参数。
 const errorMessages: Record<string, string> = {
+  "Topic operation already running. Wait and refresh.": "该主题正在处理，请稍后刷新，不要重复提交。",
+  "Ollama returned empty content. Check model output budget or try again.": "Ollama 未返回简报正文，可能耗尽了推理输出预算。请重试，并查看 Ollama Trace。",
+  "Ollama Digest timed out. Try again later.": "简报生成超时，请稍后重试。已完成的分析仍已保存。",
+  "Database operation failed. Check the local database.": "数据库操作未完成，请检查本地 PostgreSQL。",
+  "Topic update failed. Check local logs and retry.": "该阶段未完成，请检查本地日志后重试。",
   "Topic not found": "主题不存在，请刷新列表。",
   "Item not found": "内容不存在，请刷新列表。",
   "Set OLLAMA_MODEL to an installed local model name.": "请将 OLLAMA_MODEL 配置为本机已安装的模型名称。",
@@ -33,6 +38,10 @@ const errorMessages: Record<string, string> = {
   "YouTube returned an invalid search response.": "YouTube 返回的数据格式不符合要求，请稍后重试。"
 };
 
+export function apiErrorMessage(detail: unknown) {
+  return typeof detail === "string" ? errorMessages[detail] ?? "该步骤未完成，请检查本地服务或调试日志后重试。" : "请求未完成，请稍后重试。";
+}
+
 const baseUrl = "http://127.0.0.1:8000/api/topics";
 
 async function request(path = "", options: RequestInit = {}, timeoutMs = 5000, base = baseUrl) {
@@ -49,6 +58,10 @@ async function request(path = "", options: RequestInit = {}, timeoutMs = 5000, b
     throw new Error("后端无法连接或请求超时，请确认服务正在运行后重试。");
   }
   if (!response.ok) {
+    if (response.status === 409) {
+      const body = await response.json().catch(() => null);
+      throw new Error(apiErrorMessage(body?.detail));
+    }
     if (path.endsWith("/scan") || path.endsWith("/items") || path.includes("/analyze") || path.includes("/digest")) {
       const body = await response.json().catch(() => null);
       throw new Error((typeof body?.detail === "string" ? errorMessages[body.detail] : undefined) ?? `请求失败（HTTP ${response.status}），请检查服务状态后重试。`);
@@ -124,9 +137,61 @@ export type Digest = {
 };
 
 export async function generateDigest(id: number, signal: AbortSignal): Promise<Digest> {
-  return (await request(`/${id}/digest`, { method: "POST", signal }, 150000)).json();
+  return (await request(`/${id}/digest`, { method: "POST", signal }, 390000)).json();
 }
 
 export async function listDigests(id: number, signal: AbortSignal): Promise<Digest[]> {
   return (await request(`/${id}/digests`, { signal })).json();
+}
+
+export type UpdateProgress = {
+  topic_id: number; status: "running" | "completed" | "partial" | "failed";
+  stage: "scan" | "analyze" | "digest" | "complete";
+  completed_steps: string[]; fetched: number; created: number; duplicates: number;
+  processed: number; relevant: number; irrelevant: number; failed: number; pending_remaining: number;
+  digest: Digest | null; digest_skipped: string | null; error: string | null; failed_stage: string | null;
+};
+
+export async function updateTopic(id: number, signal: AbortSignal, onProgress: (progress: UpdateProgress) => void) {
+  const response = await request(`/${id}/update`, { method: "POST", signal }, 2850000);
+  if (!response.body) throw new Error("无法读取更新进度，请刷新主题查看已保存的结果。");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let terminal = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const progress = JSON.parse(line) as UpdateProgress;
+        onProgress(progress);
+        terminal = progress.status !== "running";
+      }
+      if (done) break;
+    }
+    if (!terminal) throw new Error("更新连接已中断");
+  } catch {
+    throw new Error("更新连接已中断，处理状态未知。请刷新查看已保存的数据，再决定是否重试。");
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export type TopicOverview = { id: number; name: string; enabled: boolean; item_count: number; last_collected_at: string | null };
+export type DashboardData = {
+  total_topics: number; enabled_topics: number; total_items: number; analyzed_items: number;
+  relevant_items: number; unanalyzed_items: number; topics: TopicOverview[];
+  recent_items: { id: number; topic_id: number; topic_name: string; title: string; source: string; collected_at: string }[];
+  recent_digests: (Digest & { topic_name: string })[];
+};
+export type RuntimeStatus = { database: string; ollama: string; scheduler: string; notifications: string };
+export async function readDashboard(signal?: AbortSignal): Promise<DashboardData> {
+  return (await request("/dashboard", { signal }, 12000, "http://127.0.0.1:8000/api")).json();
+}
+export async function readStatus(signal?: AbortSignal): Promise<RuntimeStatus> {
+  return (await request("/status", { signal }, 12000, "http://127.0.0.1:8000/api")).json();
 }

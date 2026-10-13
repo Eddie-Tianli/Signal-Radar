@@ -107,7 +107,7 @@ def test_postgresql_mock_scan():
                 assert len(ItemService(session).list_recent_topic_items(topic.id)) == 3
                 class FakeAI:
                     def digest(self, data):
-                        return DigestResult(title="Local brief", summary="AI-generated test brief.")
+                        return DigestResult(title="本地采集动态简报", summary="Mock 采集流程已完成，模拟内容已保存。本地测试结果仍需核对。")
 
                     def analyze(self, data):
                         return AnalysisResult(relevant=False, relevance_score=0.1,

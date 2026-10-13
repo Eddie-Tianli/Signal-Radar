@@ -5,13 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database import get_engine
 from app.topics.models import TopicRecord
-from app.items.models import ItemRecord
 from app.collection.provider import get_source
-from app.collection.service import CollectionService
 from app.ai.ollama import get_ai_provider
-from app.ai.service import AnalysisService
-from app.digests.service import DigestService
 from app.notifications.service import notify_safely, get_notification_service
+from app.workflows.service import TopicUpdateService
+from app.workflows.locks import topic_operation, TopicBusy
 
 log = logging.getLogger("uvicorn.error")
 job_lock = Lock()
@@ -42,27 +40,24 @@ def run_cycle(resource_factory=resources, stop=None, notification_factory=get_no
                         continue
                     topic_name = topic.name
                     log.info("Topic %s job started; scan started", topic_id)
-                    scan = CollectionService(session, source).scan(topic_id)
-                    log.info("Topic %s Scan completed Fetched %s Created %s", topic_id, scan.fetched, scan.created)
-                    # Bounded backlog: only currently unanalyzed Items, never reanalyze successes.
-                    pending = list(session.scalars(select(ItemRecord.id).where(
-                        ItemRecord.topic_id == topic_id, ItemRecord.ai_analyzed_at.is_(None)
-                    ).order_by(ItemRecord.id).limit(20)))
-                    analyzed = relevant = 0
-                    for item_id in pending:
-                        if stop.is_set():
-                            break
-                        item = AnalysisService(session, provider).analyze(item_id)
-                        analyzed += 1
-                        relevant += int(item.ai_relevant)
-                    log.info("Topic %s Analysis completed Analyzed %s Relevant %s", topic_id, analyzed, relevant)
-                    if relevant and not stop.is_set():
-                        digest = DigestService(session, provider).generate(topic_id)
-                        log.info("Topic %s Digest created %s", topic_id, digest.id)
-                        notify_safely(topic_id, topic_name, relevant, notification_factory)
-                    else:
-                        log.info("Topic %s Digest skipped", topic_id)
+                    with topic_operation(topic_id):
+                        result = None
+                        for progress in TopicUpdateService(session, source, provider).run(topic_id, stop):
+                            result = progress
+                        log.info("Topic %s Scan completed Fetched %s Created %s", topic_id, result.fetched, result.created)
+                        log.info("Topic %s Analysis completed Analyzed %s Relevant %s", topic_id, result.processed, result.relevant)
+                        if result.digest is not None:
+                            log.info("Topic %s Digest created %s", topic_id, result.digest.id)
+                            if result.relevant:
+                                notify_safely(topic_id, topic_name, result.relevant, notification_factory)
+                        else:
+                            log.info("Topic %s Digest skipped", topic_id)
+                        if result.error:
+                            log.error("Topic %s job failed", topic_id)
+                            continue
                     log.info("Topic %s job completed", topic_id)
+            except TopicBusy:
+                log.info("Topic %s job skipped: operation already running", topic_id)
             except Exception:
                 # Do not log exception text: database drivers/upstreams may contain secrets.
                 log.error("Topic %s job failed", topic_id)

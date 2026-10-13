@@ -9,7 +9,7 @@ def test_dashboard_counts_recent_and_read_only(scan_client):
     empty = client.get("/api/dashboard")
     assert empty.status_code == 200
     assert empty.json() == dict(total_topics=0, enabled_topics=0, total_items=0,
-                               relevant_items=0, unanalyzed_items=0, recent_items=[], recent_digests=[])
+                               relevant_items=0, unanalyzed_items=0, recent_items=[], recent_digests=[], analyzed_items=0, topics=[])
     topic = client.post("/api/topics", json={"name": "Dashboard test"}).json()["id"]
     client.post("/api/topics", json={"name": "Disabled", "enabled": False})
     path = f"/api/topics/{topic}"
@@ -23,6 +23,8 @@ def test_dashboard_counts_recent_and_read_only(scan_client):
         digest = client.post(path + "/digest").json()
         result = client.get("/api/dashboard").json()
         assert result["relevant_items"] == 1 and result["unanalyzed_items"] == 1
+        assert result["analyzed_items"] == 1
+        assert result["topics"][0]["item_count"] == 2
         assert result["recent_digests"][0]["id"] == digest["id"]
         assert result["recent_digests"][0]["topic_name"] == "Dashboard test"
         assert result["recent_items"][0]["id"] > result["recent_items"][1]["id"]

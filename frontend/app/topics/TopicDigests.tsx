@@ -1,77 +1,17 @@
 "use client";
-
-import { useEffect, useRef, useState } from "react";
-import { generateDigest, listDigests, type Digest } from "./api";
-
-export default function TopicDigests({ topicId, topicName }: { topicId: number; topicName: string }) {
+import { useEffect, useState } from "react";
+import { listDigests, type Digest } from "./api";
+import DigestArticle, { formatTime } from "../DigestArticle";
+export default function TopicDigests({ topicId, topicName, revision }: { topicId: number; topicName: string; revision: number }) {
   const [digests, setDigests] = useState<Digest[]>([]);
-  const [history, setHistory] = useState(false);
-  const [busy, setBusy] = useState<"generate" | "history" | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const controller = useRef<AbortController | null>(null);
-  useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
-    const request = new AbortController();
-    void listDigests(topicId, request.signal).then(results => {
-      if (!request.signal.aborted) setDigests(results);
-    }).catch(error => {
-      if (!request.signal.aborted) setError(error instanceof Error ? error.message : "简报加载失败，请重试。");
-    }).finally(() => { if (!request.signal.aborted) setInitialLoading(false); });
-    return () => request.abort();
-  }, [topicId]);
-
-  async function load(action: "generate" | "history") {
-    if (controller.current) return;
-    const request = new AbortController();
-    controller.current = request;
-    setBusy(action);
-    setError(null);
-    try {
-      if (action === "generate") {
-        const digest = await generateDigest(topicId, request.signal);
-        if (!request.signal.aborted) {
-          setDigests((previous) => [digest, ...previous.filter((item) => item.id !== digest.id)]);
-          setHistory(false);
-        }
-      } else {
-        const results = await listDigests(topicId, request.signal);
-        if (!request.signal.aborted) {
-          setDigests(results);
-          setHistory(true);
-        }
-      }
-    } catch (error) {
-      if (!request.signal.aborted) setError(error instanceof Error ? error.message : "简报操作失败，请重试。");
-    } finally {
-      controller.current = null;
-      if (!request.signal.aborted) setBusy(null);
-    }
-  }
-
-  return <section aria-label={`主题简报：${topicId}`} className="rounded-xl border border-blue-100 bg-slate-50 p-4 sm:p-5">
-    <p className="eyebrow">情报简报</p>
-    <h3 className="mt-1 text-lg font-semibold">最新简报</h3>
-    <div className="my-3 flex flex-wrap gap-3">
-      <button disabled={!!busy || initialLoading} onClick={() => void load("generate")} className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50">
-        {busy === "generate" ? "正在生成简报…" : "生成简报"}
-      </button>
-      <button disabled={!!busy || initialLoading} onClick={() => history ? setHistory(false) : void load("history")} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50">
-        {busy === "history" ? "正在加载历史记录…" : history ? "收起历史简报" : "查看历史简报"}
-      </button>
-    </div>
-    <div aria-live="polite" className="space-y-3">
-      {error && <p role="alert" className="text-sm text-red-700">简报操作失败：{error}</p>}
-      {initialLoading && <p role="status">正在加载简报…</p>}
-      {!initialLoading && !digests.length && <p className="text-sm text-slate-500">暂无简报。请先分析内容，存在相关内容后即可生成简报。</p>}
-      {(history ? digests : digests.slice(0, 1)).map((digest) => <article key={digest.id} className="rounded-lg border border-slate-200 border-t-4 border-t-blue-700 bg-white p-5">
-        <h4 className="break-words font-semibold">{digest.title}</h4>
-        <p className="mt-2 text-sm font-medium">AI 生成的简报</p>
-        <p className="text-sm text-slate-500">主题：{topicName}</p>
-        <p className="text-sm text-slate-500">生成时间：<time dateTime={digest.generated_at}>{new Date(digest.generated_at).toLocaleString()}</time></p>
-        <p className="text-sm text-slate-500">引用内容数：{digest.item_count}</p>
-        <p className="mt-3 whitespace-pre-wrap break-words text-slate-700">{digest.summary}</p>
-      </article>)}
-    </div>
-  </section>;
+    const controller = new AbortController();
+    void listDigests(topicId, controller.signal).then(data => { if (!controller.signal.aborted) { setDigests(data); setSelected(data[0]?.id ?? null); setError(null); } }).catch(error => { if (!controller.signal.aborted) setError(error.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [topicId, revision]);
+  const digest = digests.find(item => item.id === selected) ?? digests[0];
+  return <section className="mt-5 rounded-xl border border-line bg-canvas/50 p-5 sm:p-7" aria-label={`${topicName} 的简报`}><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="eyebrow">TOPIC BRIEF / 主题简报</p>{!!digests.length && <><label className="sr-only" htmlFor={`history-${topicId}`}>选择历史简报</label><select id={`history-${topicId}`} className="max-w-full text-xs" value={digest?.id ?? ""} onChange={event => setSelected(Number(event.target.value))}>{digests.map((item, index) => <option key={item.id} value={item.id}>{index === 0 ? "最新" : "历史"} · {formatTime(item.generated_at)} · {item.item_count} 条内容</option>)}</select></>}</div>{error && <p role="alert" className="mb-4">简报读取失败：{error}</p>}{loading ? <p role="status" className="text-sm text-muted">正在读取简报…</p> : digest ? <><DigestArticle digest={digest} topicName={topicName} compact/><a href={`/digests#digest-${digest.id}`} className="text-link mt-5 inline-block">展开阅读 →</a></> : <div className="py-4"><h3 className="text-lg font-medium">这里将汇集值得关注的进展。</h3><p className="page-description">还没有简报。一键更新会在存在新的相关摘要时生成；无相关内容时会明确跳过。</p></div>}</section>;
 }

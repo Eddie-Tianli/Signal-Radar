@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.topics.schemas import Topic, TopicWrite
 from app.topics.service import TopicService, get_topic_service
+from app.workflows.locks import topic_operation
 
 
 router = APIRouter(prefix="/api/topics", tags=["Topics"])
@@ -31,7 +32,8 @@ def create_topic(data: TopicWrite, service: Service) -> Topic:
 @router.put("/{topic_id}", response_model=Topic)
 def update_topic(topic_id: int, data: TopicWrite, service: Service) -> Topic:
     """Replace all editable fields; omitted optional fields use their defaults."""
-    topic = service.update_topic(topic_id, data)
+    with topic_operation(topic_id):
+        topic = service.update_topic(topic_id, data)
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
@@ -39,6 +41,7 @@ def update_topic(topic_id: int, data: TopicWrite, service: Service) -> Topic:
 
 @router.delete("/{topic_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_topic(topic_id: int, service: Service) -> Response:
-    if not service.delete_topic(topic_id):
-        raise HTTPException(status_code=404, detail="Topic not found")
+    with topic_operation(topic_id):
+        if not service.delete_topic(topic_id):
+            raise HTTPException(status_code=404, detail="Topic not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

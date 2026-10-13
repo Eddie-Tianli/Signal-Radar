@@ -38,7 +38,7 @@ AIProvider 接收 Topic name / description 以及 Item title / snippet / author 
 
 OLLAMA_MODEL 选择已安装模型，业务代码不硬编码模型名称。HTTP 客户端禁用代理和重定向，只接受本机回环 HTTP 地址，超时 120 秒，不自动重试。
 
-AnalysisService 校验并保存结果及带时区的分析时间。手动单条分析可覆盖旧结果，但失败不会清除旧结果。Topic 批量分析最多选择 10 条未分析 Item，依次处理并逐条提交；Provider 失败的内容可重试。该同步接口没有后台执行或并发协调。分析仅依据元数据，是模型判断而非核实后的事实。Prompt 要求 1–3 句摘要；校验限制非空且最多 1000 字符。
+AnalysisService 校验并保存结果及带时区的分析时间。手动单条分析可覆盖旧结果，但失败不会清除旧结果。Topic 批量分析最多选择 10 条未分析 Item，依次处理并逐条提交；Provider 失败的内容可重试。该同步接口没有后台队列；手动入口与 Scheduler 共用 Topic 级操作互斥。分析仅依据元数据，是模型判断而非核实后的事实。Prompt 要求 1–3 句摘要；校验限制非空且最多 1000 字符。
 
 ## Digest 与本地 Scheduler
 
@@ -47,17 +47,19 @@ Scheduler → Topic → Collection Service → Item → AI Analysis → Relevant
 → Digest Service → AIProvider → Digest → PostgreSQL → Frontend
 ```
 
-DigestService 最多选择 20 条已分析且相关的 Item，按 `COALESCE(published_at, collected_at) DESC, id DESC` 排序。AI 输入包括 Topic name / description 和 Item title / source / author / published_at / ai_category / ai_relevance_score / ai_summary，不传原始 snippet 或全文。
+DigestService 最多选择 10 条已分析、相关且 ai_summary 非空的 Item，按 `ai_relevance_score DESC NULLS LAST`、`COALESCE(published_at, collected_at) DESC`、`id DESC` 排序。AI 输入包括 Topic name / description 和 Item title / source / author / published_at / ai_category / ai_relevance_score / ai_summary，不传原始 snippet 或全文。
+
+Final Digest 仅合并逐条分析结果，不重新判断相关性或清洗原始文本。空摘要、不相关和未分析记录仍保留数据库，只退出简报流程。数据使用 TOPIC / ITEMS / ITEM 边界及 JSON 编码隔离。解析依次尝试完整 JSON、code fence、附加文字中的首个 JSON object；格式和语义失败共用最多一次重试。保存前做确定性语言及漂移检查。DEBUG 日志记录数量、失败原因和字段校验类型。完整输入与模型输出仅在显式启用 OLLAMA_TRACE_ENABLED 时写入本地 backend/logs/ollama_trace.jsonl；关闭时 DEBUG 也不记录正文，详见本地开发指南。
 
 独立 JSON schema 要求 title 和 summary。Prompt 要求优先总结重要新信息、合并明显重复、禁止补充未提供事实，并生成适中长度的 AI 简报。手动生成每次保存一份历史快照；无符合条件内容时返回 409，不调用 AI。
 
 Scheduler 使用 Python `threading.Thread`、`Event.wait` 和进程级 `Lock`，由 FastAPI lifespan 管理，默认关闭；测试强制禁止后台启动。首次执行等待配置间隔，下一次间隔从上一轮完成后开始，不积累漏跑任务。单个 worker 顺序处理 Topic，每个 Topic 使用独立 session / provider context；处理前再次检查 enabled。
 
-每轮先扫描，再分析最多 20 条待处理内容（包括此前遗留内容），已分析内容跳过。只有本轮至少分析出一条相关内容才自动生成 Digest。无新相关内容则跳过。
+每轮先扫描，再分析最多 20 条待处理内容（包括此前遗留内容），已分析内容跳过。只有存在比最新 Digest 更新的已分析相关摘要（或尚无 Digest）时才生成；无变化跳过。这样可恢复此前 Digest 失败而已成功分析的内容。
 
-单个 Topic 失败不影响其他 Topic。日志只记录 ID、数量和安全状态，不输出异常正文或 secret。已成功分析的数据不会因后续失败回滚。若简报生成失败，可手动生成；没有持久化重试队列。停止信号阻止后续任务，当前 HTTP 请求完成或超时后线程退出。
+单个 Topic 失败不影响其他 Topic。日志只记录 ID、数量和安全状态，不输出异常正文或 secret。已成功分析的数据不会因后续失败回滚。若简报生成失败，可再次一键更新或手动生成；没有持久化重试队列。停止信号阻止后续任务，当前 HTTP 请求完成或超时后线程退出。
 
-启用时仅运行一个 Uvicorn 进程，不使用 `--reload`。进程内锁不保护多进程或手动请求；手动扫描、分析测试时应关闭 Scheduler，避免竞争。
+启用时仅运行一个 Uvicorn 进程，不使用 `--reload`。全局 job_lock 防止 Scheduler 周期重叠，Topic 级令牌锁保护手动更新、扫描、分析、简报、编辑和删除。忙碌 Topic 不重复执行；锁不保护多进程。
 
 ## 本地运行与 Windows 通知
 
@@ -80,3 +82,27 @@ Windows 通知使用固定 PowerShell 脚本和内置 WinRT ToastNotificationMan
 前端将按钮、状态、辅助标签及已知 API 错误映射为中文，不改变 endpoint、JSON 字段或后端响应。未知错误仅显示中文提示和 HTTP 状态，不直接展示原始 detail。用户输入、来源内容、AI 输出与技术标识保持原样；不修改 AI prompt。
 
 尚未实现 RSS、Web Search、embedding、语义去重、事件聚类、全文抓取或远程通知。
+
+## v0.1.1 一键更新与界面
+
+```text
+Topic UI / Scheduler
+↓
+Topic lock → TopicUpdateService
+↓
+CollectionService → AnalysisService (up to 20 pending Items)
+↓
+DigestService (up to 10 relevant summaries)
+↓
+PostgreSQL → NDJSON progress / Dashboard / Digest reader
+```
+
+POST /api/topics/{topic_id}/update 顺序执行，流式返回真实步骤和计数；Ollama 调用仍为 stream=false。扫描事务、逐条分析和简报分别提交，失败保留早先成功结果。只分析 ai_analyzed_at=null，失败内容可重试。Provider 不可用时结束本轮分析，避免重复请求；其他单条失败可继续处理后续内容。
+
+简报仅合并已有 ai_summary，不重新判定相关性。防护包括数据块隔离、来源标签转义、JSON/Pydantic 校验、输出语言与 Topic 关键词检查、明显任务漂移检查；正常引用的攻击样本不作为独立指令。确定性检查不能验证事实真伪或完全防止语义漂移。
+
+真实旧 Trace 显示 deepseek-r1:8b 的 2048 token 预算耗尽在 thinking 中，content 为空。Digest 现在首次 num_predict=4096，最多一次重试升为 8192，每次超时 180 秒；单条分析仍为 2048/120 秒。保持 temperature=0、JSON Schema 和 stream=false，不把 thinking 当作简报正文。
+
+前端使用现有 Tailwind Tokens，浅色底、青绿色主色、系统中文字体、统一按钮/输入/状态组件。总览突出最新简报；Topic 以一键更新为主，高级操作保留独立入口；原始信息与 AI 摘要分区；Digest 纯文本安全展示，不伪造结构化章节或精确来源引用。
+
+更新进度仅在本次响应中存在，不持久化任务状态；刷新或断开连接后无法恢复步骤，当前推理可能继续到结束或超时。应读取已保存内容并留意 409，再决定是否重试。不承诺后台永久运行。

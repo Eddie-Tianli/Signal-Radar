@@ -61,8 +61,8 @@ Digest 必须关联已有 Topic。删除 Topic 时级联删除其 Digest，与 I
 | topic_id | integer | 必填 foreign key，已建索引 |
 | title | varchar(200) | 必填 |
 | summary | text | 必填，由 AI 生成 |
-| item_count | integer | 本次采用的内容数量（service 限制 1–20） |
-| generated_at | timestamp with time zone | 必填，数据库当前时间 |
+| item_count | integer | 本次采用的内容数量（service 限制 1–10） |
+| generated_at | timestamp with time zone | 必填，service 记录生成完成时的 UTC 时间；数据库保留默认值 |
 
 历史按 `generated_at DESC, id DESC` 返回。简报为文本快照，没有 Item 关联表、embedding 或 event ID。0004 保留已有 Topic / Item；降级会删除简报历史。
 
@@ -74,7 +74,10 @@ Digest 必须关联已有 Topic。删除 Topic 时级联删除其 Digest，与 I
 python -m alembic upgrade head
 python -m alembic current
 python -m alembic check
-python -m pytest -q
+$testTempRoot = 'D:\pytest-temp'
+New-Item -ItemType Directory -Path $testTempRoot -Force | Out-Null
+$testTempPath = Join-Path $testTempRoot ([guid]::NewGuid().ToString('N'))
+python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
 ```
 
 离线测试使用隔离 SQLite 文件，Item 测试启用 foreign key，覆盖 0001 → 0002 升级、降级及 Topic 保留。可选 PostgreSQL 测试验证真实约束及时区行为，不访问互联网。降级 0002 会删除 Item，不要在需要保留数据的数据库上执行。

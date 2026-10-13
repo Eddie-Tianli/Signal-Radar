@@ -12,6 +12,7 @@ from app.database import get_session
 from app.items.schemas import Item
 from app.items.service import ItemService
 from app.topics.models import TopicRecord
+from app.workflows.locks import topic_operation
 
 router = APIRouter(prefix="/api/topics", tags=["Collection"])
 DatabaseSession = Annotated[Session, Depends(get_session)]
@@ -21,7 +22,8 @@ DatabaseSession = Annotated[Session, Depends(get_session)]
 def scan_topic(topic_id: int, session: DatabaseSession,
                source: Annotated[SourceAdapter, Depends(get_source)]) -> ScanResult:
     try:
-        return CollectionService(session, source).scan(topic_id)
+        with topic_operation(topic_id):
+            return CollectionService(session, source).scan(topic_id)
     except LookupError:
         raise HTTPException(404, "Topic not found") from None
     except SourceError as error:

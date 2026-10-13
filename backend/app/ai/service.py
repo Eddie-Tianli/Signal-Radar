@@ -19,8 +19,11 @@ class AnalysisService:
         if item is None:
             raise LookupError("Item not found")
         topic = item.topic
-        data = AnalysisInput(topic_name=topic.name, topic_description=topic.description,
-                             title=item.title, snippet=item.snippet, author=item.author, source=item.source)
+        # Bound one model request without changing or deleting the stored source content.
+        data = AnalysisInput(topic_name=topic.name[:200],
+                             topic_description=topic.description[:500] if topic.description else None,
+                             title=item.title[:300], snippet=item.snippet[:2000] if item.snippet else None,
+                             author=item.author[:100] if item.author else None, source=item.source)
         result = AnalysisResult.model_validate(self.provider.analyze(data))
         item.ai_relevant = result.relevant
         item.ai_relevance_score = result.relevance_score

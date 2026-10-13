@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+import logging
 
 from app.topics.router import router as topics_router
 from app.collection.router import router as collection_router
@@ -9,9 +12,11 @@ from app.scheduler.lifecycle import lifespan
 from app.health import dependency_status
 from app.dashboard import router as dashboard_router
 from app.notifications.service import notifications_enabled
+from app.workflows.router import router as updates_router
+from app.workflows.locks import TopicBusy
 
 
-app = FastAPI(title="SignalRadar API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="SignalRadar API", version="0.1.1", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -23,6 +28,18 @@ app.include_router(collection_router)
 app.include_router(ai_router)
 app.include_router(digests_router)
 app.include_router(dashboard_router)
+app.include_router(updates_router)
+
+
+@app.exception_handler(TopicBusy)
+async def topic_busy_handler(request, error):
+    return JSONResponse(status_code=409, content={"detail": "Topic operation already running. Wait and refresh."})
+
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error_handler(request, error):
+    logging.getLogger("uvicorn.error").error("Database operation failed (%s)", type(error).__name__)
+    return JSONResponse(status_code=503, content={"detail": "Database operation failed. Check the local database."})
 
 
 @app.get("/")

@@ -57,7 +57,10 @@ uvicorn app.main:app --reload
 ## 自动化测试
 
 ```powershell
-python -m pytest -q
+$testTempRoot = 'D:\pytest-temp'
+New-Item -ItemType Directory -Path $testTempRoot -Force | Out-Null
+$testTempPath = Join-Path $testTempRoot ([guid]::NewGuid().ToString('N'))
+python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
 ```
 
 默认测试使用隔离临时 SQLite 文件，覆盖 CRUD、migration、重新连接及回滚。SQLite 仅为测试工具，不是运行时回退方案；默认测试不使用配置的开发数据库，也不替代真实 PostgreSQL 验证。
@@ -66,16 +69,22 @@ python -m pytest -q
 
 ```powershell
 $env:RUN_POSTGRES_TESTS = '1'
-python -m pytest tests/test_items_postgresql.py -q
+$testTempRoot = 'D:\pytest-temp'
+New-Item -ItemType Directory -Path $testTempRoot -Force | Out-Null
+$testTempPath = Join-Path $testTempRoot ([guid]::NewGuid().ToString('N'))
+python -m pytest tests/test_items_postgresql.py -q -p no:cacheprovider --basetemp $testTempPath
 Remove-Item Env:\RUN_POSTGRES_TESTS
 ```
 
-测试插入会回滚，但 sequence 可能前进。Windows 临时目录权限异常时使用新目录，不修改旧目录权限：
+测试插入会回滚，但 sequence 可能前进。Windows 后端测试统一使用仓库外的 D:\pytest-temp，每次生成新的 GUID 子目录，并禁用 cacheprovider。不复用旧子目录，也不修改系统临时目录权限：
 
 ```powershell
-python -m pytest -q -p no:cacheprovider --basetemp "$env:TEMP\signalradar-tests-$([guid]::NewGuid().ToString('N'))"
+$testTempRoot = 'D:\pytest-temp'
+New-Item -ItemType Directory -Path $testTempRoot -Force | Out-Null
+$testTempPath = Join-Path $testTempRoot ([guid]::NewGuid().ToString('N'))
+python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
 ```
 
 当前 head 为 0004。后续模型变更需生成并审阅 migration，再执行 upgrade head。不要在需要保留数据的数据库上降级：0001 删除 topics，0002 删除 items，0003 删除 AI 结果，0004 删除 Digest 历史。
 
-本地启动、Ollama、Scheduler 和通知操作见 [本地开发指南](../docs/development/local-development)。
+本地启动、Ollama、Scheduler 和通知操作见 [本地开发指南](../docs/development/local-development.md)。

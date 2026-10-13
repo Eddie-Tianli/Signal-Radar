@@ -1,51 +1,15 @@
+"use client";
+import { useState } from "react";
 import type { CollectedItem } from "./api";
-
-type Props = {
-  items: CollectedItem[];
-  analyzing: Record<number, boolean>;
-  errors: Record<number, string>;
-  batchAnalyzing: boolean;
-  onAnalyze: (id: number) => void;
-};
-
+import { formatTime } from "../DigestArticle";
+type Props = { items: CollectedItem[]; analyzing: Record<number, boolean>; errors: Record<number, string>; batchAnalyzing: boolean; onAnalyze: (id: number) => void };
 export default function ItemList({ items, analyzing, errors, batchAnalyzing, onAnalyze }: Props) {
-  if (!items.length) return <p className="text-sm text-slate-500">暂无已采集内容。</p>;
-  return (
-    <ul className="space-y-4">
-      {items.map((item) => {
-        const safeUrl = /^https?:\/\//i.test(item.url);
-        return (
-          <li key={item.id} className={`min-w-0 rounded-lg border border-slate-200 p-4 ${item.ai_analyzed_at && item.ai_relevant === false ? "bg-slate-50" : "bg-white"}`}>
-            <p className="eyebrow mb-2">原始内容 · {item.source}</p>
-            <h4 className="break-words font-semibold">
-              {safeUrl ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">{item.title}</a> : item.title}
-            </h4>
-            <p className="mt-2 text-sm text-slate-600">来源：{item.source} · 作者：{item.author || "未知"}</p>
-            <p className="mt-1 text-sm text-slate-500">发布时间：{item.published_at ? <time dateTime={item.published_at}>{new Date(item.published_at).toLocaleString()}</time> : "未知"}</p>
-            <p className="my-3 whitespace-pre-wrap break-words text-sm text-slate-600">{item.snippet || "暂无内容描述。"}</p>
-            {safeUrl && <a href={item.url} target="_blank" rel="noopener noreferrer" className="break-all text-sm text-blue-700 underline">查看原文（新标签页）↗</a>}
-            <section aria-label={`内容 AI 分析：${item.id}`} className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h5 className="font-semibold">AI 分析</h5>
-                <button onClick={() => onAnalyze(item.id)} disabled={analyzing[item.id] || batchAnalyzing}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50">
-                  {analyzing[item.id] ? "正在分析…" : "分析"}
-                </button>
-              </div>
-              <div aria-live="polite" className="mt-2 space-y-2 text-sm">
-                {errors[item.id] && <p role="alert" className="text-red-700">分析失败：{errors[item.id]}</p>}
-                {item.ai_analyzed_at ? <>
-                  <p className="badge">{item.ai_relevant ? "相关" : "不相关"}</p>
-                  <p>相关性评分：{item.ai_relevance_score ?? "未知"} · 分类：{item.ai_category || "未知"}</p>
-                  <p className="font-medium">AI 摘要（由 AI 生成）</p>
-                  <p className="whitespace-pre-wrap break-words text-slate-600">{item.ai_summary}</p>
-                  <p className="text-slate-500">分析时间：<time dateTime={item.ai_analyzed_at}>{new Date(item.ai_analyzed_at).toLocaleString()}</time></p>
-                </> : <p className="text-slate-500">未分析</p>}
-              </div>
-            </section>
-          </li>
-        );
-      })}
-    </ul>
-  );
+  const [filter, setFilter] = useState("all");
+  const visible = items.filter(item => filter === "all" || (filter === "pending" ? !item.ai_analyzed_at : !!item.ai_analyzed_at && item.ai_relevant === (filter === "relevant")));
+  if (!items.length) return <p className="empty">暂无采集内容。先扫描一个主题，再让 AI 整理信息。</p>;
+  return <><div className="mb-5 flex flex-wrap gap-1 rounded-lg bg-canvas p-1" role="group" aria-label="内容状态筛选">{[["all", "全部"], ["pending", "待分析"], ["relevant", "相关"], ["irrelevant", "不相关"]].map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)} className={`rounded-md px-3 py-2 text-xs ${filter === value ? "bg-surface font-medium text-accent shadow-sm" : "text-muted"}`}>{label}</button>)}</div>{!visible.length && <p className="empty">此状态下暂无内容，请切换筛选。</p>}<ul className="space-y-4">{visible.map(item => {
+    const safeUrl = /^https?:\/\//i.test(item.url);
+    return <li key={item.id} className={`overflow-hidden rounded-xl border border-line ${item.ai_analyzed_at && !item.ai_relevant ? "bg-canvas/40" : "bg-surface"}`}><div className="p-5"><div className="mb-3 flex flex-wrap items-center gap-2"><span className="badge">{item.source}</span><span className="text-[11px] text-muted">原始信息 · {item.author || "作者未提供"}</span></div><h4 className="text-base font-semibold leading-7">{safeUrl ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:text-accent" aria-label={`${item.title}（新标签页打开）`}>{item.title} <span className="font-normal text-muted">↗</span></a> : item.title}</h4><p className="mt-2 text-xs text-muted">{item.published_at ? `发布于 ${formatTime(item.published_at)}` : "未提供发布时间"}</p>{item.snippet && <details className="mt-3"><summary className="text-xs text-muted">查看来源摘要</summary><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted">{item.snippet}</p></details>}{safeUrl && <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-link mt-3 inline-block text-xs">查看原文（新标签页）↗</a>}</div>
+    <section className="border-t border-line bg-accent-soft/40 p-5" aria-label={`内容 ${item.id} 的 AI 分析`}><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><span className="eyebrow">AI ANALYSIS</span><span className={`badge ${item.ai_analyzed_at && item.ai_relevant ? "badge-active" : ""}`}>{item.ai_analyzed_at ? item.ai_relevant ? "已分析 · 相关" : "已分析 · 不相关" : "未分析"}</span></div><button className="btn btn-quiet py-1 text-xs" disabled={batchAnalyzing || analyzing[item.id]} onClick={() => onAnalyze(item.id)}>{analyzing[item.id] ? "正在分析…" : item.ai_analyzed_at ? "重新分析" : "分析"}</button></div>{errors[item.id] && <p role="alert" className="mb-3">分析未完成：{errors[item.id]}</p>}{item.ai_analyzed_at ? <><p className="mb-2 text-xs text-muted">相关性 {item.ai_relevance_score === null ? "未提供" : `${Math.round(item.ai_relevance_score * 100)}%`} · {item.ai_category || "未分类"}</p><p className="mb-1 text-xs font-medium text-accent">AI 生成摘要</p><p className="whitespace-pre-wrap text-sm leading-7">{item.ai_summary || "暂无摘要"}</p><p className="mt-3 text-[11px] text-muted">分析于 {formatTime(item.ai_analyzed_at)}</p></> : <p className="text-sm leading-7 text-muted">尚未判断相关性。可以单独分析，或一键更新整个主题。</p>}</section></li>;
+  })}</ul></>;
 }

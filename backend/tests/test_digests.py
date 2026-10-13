@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+import re
 import httpx
 import pytest
 from sqlalchemy.orm import Session
@@ -30,7 +31,7 @@ class FakeAI:
         self.inputs.append(data)
         if self.fail:
             raise AIError("Local model unavailable", 503)
-        return DigestResult(title="Test Brief", summary="AI-generated content: key developments.")
+        return DigestResult(title="主题动态简报", summary=f"{data.topic_name} 的最新进展已整理。相关信息仍需持续关注与核实。")
 
 
 def add_item(session, index, relevant=True, analyzed=True):
@@ -57,12 +58,12 @@ def test_digest_selection_persistence_history(engine):
         service = DigestService(session, provider)
         first = service.generate(1)
         second = service.generate(1)
-        assert first.topic_id == 1 and first.item_count == 20
+        assert first.topic_id == 1 and first.item_count == 10
         assert len(session.get(TopicRecord, 1).digests) == 2
         assert [row.id for row in service.history(1)] == [second.id, first.id]
         selected = provider.inputs[0].items
         assert selected[0].title == "Item 26"
-        assert selected[-1].title == "Item 4"
+        assert selected[-1].title == "Item 14"
         assert all(item.title not in ("Item 24", "Item 25") for item in selected)
         assert "snippet" not in provider.inputs[0].model_dump_json()
     with Session(engine) as session:
@@ -130,7 +131,7 @@ def test_ollama_digest_chinese_brief_from_english_items(engine):
                        "based on the provided", "根据提供的信息"):
             assert phrase in instruction.split("禁止出现", 1)[1]
         assert body["options"]["temperature"] == 0
-        content = json.loads(body["messages"][1]["content"])
+        content = {"items": [json.loads(value) for value in re.findall(r"<ITEM>\n(.*?)\n</ITEM>", body["messages"][1]["content"], re.S)]}
         assert set(content["items"][0]) == {
             "title", "source", "author", "published_at", "ai_category",
             "ai_relevance_score", "ai_summary",
@@ -139,6 +140,7 @@ def test_ollama_digest_chinese_brief_from_english_items(engine):
         return httpx.Response(200, json={"message": {"content": json.dumps(result, ensure_ascii=False)}})
     with Session(engine) as session, httpx.Client(transport=httpx.MockTransport(handler)) as client:
         item = add_item(session, 1)
+        session.get(TopicRecord, 1).name = "OpenAI API"
         item.title = "OpenAI API update"
         item.ai_summary = "OpenAI announced an API update with reportedly faster responses."
         item.ai_relevance_score = 0.9
@@ -169,6 +171,7 @@ def test_only_irrelevant_or_unanalyzed_items_do_not_call_ollama(engine):
     '{"title":"中文简报","summary":"最新进展。"}',
     '```json\n{"title":"中文简报","summary":"最新进展。"}\n```',
     '```\n{"title":"中文简报","summary":"最新进展。"}\n```',
+    '说明中有 {}，实际结果：```json\n{"title":"中文简报","summary":"最新进展。"}\n```',
     '简报如下：\n{"title":"中文简报","summary":"最新进展。"}\n以上为简报。',
     '说明 {不是 JSON}：{"title":"中文简报","summary":"最新进展。"}',
     '{"title":"中文简报","summary":"含有 {括号} 和 \\"引号\\"。"}',
@@ -183,7 +186,7 @@ def test_digest_json_and_wrapped_objects(content):
         return httpx.Response(200, json={"message": {"content": content}})
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = OllamaProvider(client, "http://localhost:11434", "fake").digest(
-            DigestInput(topic_name="测试", topic_description=None, items=[]))
+            DigestInput(topic_name="中文", topic_description=None, items=[]))
     assert result.title == "中文简报" and result.summary
     assert len(calls) == 1
 
@@ -200,7 +203,7 @@ def test_digest_json_and_wrapped_objects(content):
 def test_digest_retry_once_and_validates_before_saving(engine, caplog, invalid, retry_succeeds):
     caplog.set_level("INFO", logger="uvicorn.error")
     calls = []
-    valid = '{"title":"中文简报","summary":"已修复的简报。"}'
+    valid = '{"title":"中文简报","summary":"Existing topic 的简报已修复，以下是相关内容的最新进展。"}'
     def handler(request):
         body = json.loads(request.content)
         calls.append(body)
@@ -239,5 +242,57 @@ def test_digest_http_failure_is_not_a_parse_retry():
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(AIError, match="Ollama analysis failed"):
             OllamaProvider(client, "http://localhost:11434", "fake").digest(
-                DigestInput(topic_name="测试", topic_description=None, items=[]))
+                DigestInput(topic_name="中文", topic_description=None, items=[]))
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("summary", [None, "", "   ", "\t\r\n", "\u3000\u00a0"])
+def test_empty_summary_not_eligible_and_raw_item_retained(engine, summary):
+    provider = FakeAI()
+    with Session(engine) as session:
+        item = add_item(session, 1)
+        item.ai_summary = summary
+        session.commit()
+        with pytest.raises(NoRelevantItems):
+            DigestService(session, provider).generate(1)
+        assert provider.inputs == []
+        assert session.get(ItemRecord, item.id).snippet == "RAW SHOULD NOT BE SENT"
+        assert session.get(ItemRecord, item.id).ai_summary == summary
+
+
+def test_filtering_keeps_irrelevant_pending_and_empty_rows(engine):
+    provider = FakeAI()
+    with Session(engine) as session:
+        valid = add_item(session, 1)
+        irrelevant = add_item(session, 2, relevant=False)
+        pending = add_item(session, 3, analyzed=False)
+        empty = add_item(session, 4)
+        empty.ai_summary = " "
+        empty.ai_relevance_score = 1
+        session.commit()
+        result = DigestService(session, provider).generate(1)
+        assert result.item_count == 1
+        assert [item.title for item in provider.inputs[0].items] == [valid.title]
+        assert all(session.get(ItemRecord, item.id) is not None for item in (valid, irrelevant, pending, empty))
+
+
+def test_debug_without_trace_does_not_log_model_content(engine, caplog, monkeypatch):
+    caplog.set_level("DEBUG", logger="uvicorn.error")
+    monkeypatch.setenv("DB_PASSWORD", "private-db-password")
+    monkeypatch.setenv("YOUTUBE_API_KEY", "private-youtube-key")
+    calls = []
+    def handler(request):
+        calls.append(request)
+        result = {"title": 123, "summary": "private-db-password private-youtube-key token=private-token"}
+        if len(calls) == 2:
+            result = {"title": "主题动态简报", "summary": "Existing topic 的相关进展已整理，仍值得继续关注。"}
+        return httpx.Response(200, json={"message": {"content": json.dumps(result, ensure_ascii=False)}})
+    with Session(engine) as session, httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        add_item(session, 1)
+        session.commit()
+        DigestService(session, OllamaProvider(client, "http://localhost:11434", "fake")).generate(1)
+    assert "Final Digest selected 1 Items for Topic 1" in caplog.text
+    assert "Pydantic validation error" in caplog.text
+    assert "raw model content" not in caplog.text
+    assert "parse retry (1 of 1)" in caplog.text
+    assert all(secret not in caplog.text for secret in ("private-db-password", "private-youtube-key", "private-token"))

@@ -25,7 +25,11 @@ def dashboard(session: Annotated[Session, Depends(get_session)]):
             .order_by(ItemRecord.collected_at.desc(), ItemRecord.id.desc()).limit(5)).all()
         briefs = session.execute(select(DigestRecord, TopicRecord.name).join(TopicRecord)
             .order_by(DigestRecord.generated_at.desc(), DigestRecord.id.desc()).limit(5)).all()
-        return {"total_topics": topics[0], "enabled_topics": topics[1], "total_items": items[0],
+        topic_summaries = session.execute(select(TopicRecord.id, TopicRecord.name, TopicRecord.enabled,
+            func.count(ItemRecord.id), func.max(ItemRecord.collected_at)).outerjoin(ItemRecord)
+            .group_by(TopicRecord.id, TopicRecord.name, TopicRecord.enabled).order_by(TopicRecord.id)).all()
+        return {"topics": [{"id": row[0], "name": row[1], "enabled": row[2], "item_count": row[3], "last_collected_at": row[4]} for row in topic_summaries],
+                "analyzed_items": items[0] - items[2], "total_topics": topics[0], "enabled_topics": topics[1], "total_items": items[0],
                 "relevant_items": items[1], "unanalyzed_items": items[2],
                 "recent_items": [{"id": item.id, "topic_id": item.topic_id, "topic_name": name,
                     "title": item.title, "source": item.source, "collected_at": item.collected_at} for item, name in recent],
