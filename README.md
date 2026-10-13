@@ -1,53 +1,50 @@
-# SignalRadar v0.1.1（候选版本）
+# SignalRadar v0.2.0（本地候选版本）
 
-SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具。围绕关注的主题（Topic）采集内容（Item），通过本地 AI 判断相关性并生成简报（Digest）。MockSource 让采集流程无需真实外部 API 即可测试。
+SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具。用自然语言描述关注意图，设置包含与排除条件，再通过现有一键更新完成采集、相关性分析、有效信息筛选、信息整合和中文简报。
 
-本轮已完成代码与真实 Ollama / 隔离数据库流程验证；PostgreSQL 当前未启动，浏览器桌面与窄屏视觉验收待人工完成。尚未创建 tag 或发布版本。
+本版本不创建发布 Tag。实施过程及真实验收结果见 [v0.2.0 验收记录](docs/development/v0.2.0-implementation.md)。
 
 ## 当前功能
 
-- 概览（Dashboard）：主题、内容、相关内容和待分析数量，最新简报、近期内容及本地依赖状态。
-- Topic 创建、编辑、删除、状态管理及本地搜索；一键更新、实时步骤反馈和高级独立操作。
-- 统一浅色青绿色工作台：总览、我的主题、简报阅读页；内容状态筛选与历史简报切换。
-- YouTube Data API 与仅供开发测试的 MockSource；按来源标识去重。
-- Ollama 结构化分析：单条分析、有限数量的批量分析，保存相关性、评分、分类、摘要和分析时间。
-- 从最多 10 条已分析、相关且摘要非空的 Item 生成 Digest，支持查看历史简报。
-- 可选自动任务（Scheduler）：扫描 → 分析待处理内容 → 有尚未进入最新简报的相关摘要时生成简报。
-- 自动生成简报成功且有新相关内容时，可发送 Windows 通知。
-- 本地启动脚本、依赖检查、正常关闭和轮转日志。
+- 中文 Dashboard、Topic 管理、内容筛选/排序、简报阅读及回收站。
+- Topic 支持 name、description、逐条 include / exclude 规则、0～1 阈值（默认 0.80）、enabled。
+- Query Builder 根据名称、描述与启用的包含条件提取关键词；内置 ChatGPT 模型、诺兰新电影简短模板，其他主题采用保守提取。最多 2 查询，不调用 AI 改写；不是通用自然语言翻译器。
+- YouTube Data API / MockSource 将内容统一保存为 Item；实际执行查询与最近成功扫描时间可查看。
+- Ollama 逐条输出符合度、理由、排除状态、分类和事实摘要。程序统一判定有效、无效、待复核、失败。
+- YouTube 播放/点赞/评论等真实指标单独计算热度；MockSource 与缺失指标显示未知。
+- 当前有效摘要经保守去重后生成中文 Digest，保存来源 Item ID、URL、时间和作者快照；旧版简报继续可读。
+- 手动、一键更新和 Scheduler 复用同一逻辑；规则改变会使旧分析过期，不无条件进入新简报。
+- 可选 Windows 通知、本地启动脚本、依赖状态、标准日志及默认关闭的 Ollama Trace。
+- 单条 Item（连同 AI 结果）及 Digest 可移入回收站、恢复和二次确认永久删除。
 
 ## 技术栈与架构
 
-前端：Next.js + React + TypeScript + Tailwind CSS。后端：Python + FastAPI。
-数据库：PostgreSQL + SQLAlchemy + Alembic。AI：本地 Ollama。
-Scheduler 使用 Python 标准库；Windows 通知使用 WinRT。
+Next.js + React + TypeScript + Tailwind CSS；Python + FastAPI；PostgreSQL + SQLAlchemy + Alembic；本地 Ollama。Scheduler 使用 Python 标准库，Windows 通知使用 WinRT，没有新 AI 框架或前端依赖。
 
 ```text
-Topic → SourceAdapter → Item → AIProvider / Ollama → Relevant Items → Digest
-                         ↓                              ↓
-                      PostgreSQL ←─────────────────────┘
-                         ↓
-                  Dashboard / Topics UI
+Topic 描述 / 规则 / 阈值
+→ Query Builder → SourceAdapter → Raw Item → PostgreSQL
+→ AIProvider / Ollama → 符合度与排除理由
+→ 程序有效性判定 → 保守信息整合 → Final Digest
+→ PostgreSQL（来源快照）→ Frontend
 ```
 
-Scheduler 调用同一组服务，通知在自动简报保存成功后发送。
-项目使用 monorepo：`frontend/`、`backend/`、`docs/`。当前 migration head 为 **0005**，项目版本为 **0.1.1**。
+项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0006**。
 
 ## 本地安装与启动
 
-准备 Python、Node.js/npm、本地 PostgreSQL，以及已安装模型的 Ollama。
-启动顺序：**PostgreSQL → Ollama → SignalRadar**。Ollama 离线时仍可浏览数据，但分析和简报生成不可用。
-
-在仓库根目录的 PowerShell 中执行首次配置：
+启动顺序：**PostgreSQL → Ollama → SignalRadar**。Ollama 不可用时仍可管理主题、扫描和阅读已有数据。
 
 ```powershell
-cd backend
+cd D:\Projects_ltl\Signal-Radar\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
-# Only if .env does not exist: copy .env.example .env
-# Edit .env with local database credentials and the exact Ollama model name.
+# 仅当 .env 不存在时复制；保留现有数据库凭据和本机模型名称
+# Copy-Item .env.example .env
 python -m alembic upgrade head
+python -m alembic current
+python -m alembic check
 cd ..\frontend
 npm install
 cd ..
@@ -55,52 +52,63 @@ cd ..
 .\start-signalradar.ps1
 ```
 
-数据库账户创建见 [后端说明](backend/README.md)。已有 `.env` 时不要覆盖；不要提交凭据。
-启动脚本会构建 Next.js 并使用生产模式运行。只有构建与当前源码一致时才使用 `-SkipBuild`。
-保持终端打开，按 Ctrl+C 正常关闭前后端。访问 http://localhost:3000；Swagger 位于 http://127.0.0.1:8000/docs。日志位于 `logs/`。
+已有项目无需重建虚拟环境。升级前停止旧进程并备份数据库，应用 `0006_intent_pipeline.py`。迁移只增加字段和表；旧 Raw Item、AI 结果与 Digest 均保留，旧分析标为待重新确认。不要用降级来启动旧代码。
+
+访问 http://localhost:3000；Swagger：http://127.0.0.1:8000/docs。保持终端打开，Ctrl+C 正常停止。脚本构建生产前端并启动单进程后端；只有构建与源码一致时才用 `-SkipBuild`。脚本不会修改系统配置或重复启动 PostgreSQL / Ollama。数据库账户配置见 [后端说明](backend/README.md)。
 
 ## 环境变量
 
-在 `backend/.env` 中配置；进程环境变量优先。修改后重启后端。
+在 `backend/.env` 配置，修改后重启；进程环境变量优先。不要提交 `.env`。
 
 | 环境变量 | 默认值 / 用途 |
 | --- | --- |
-| DB_HOST | 127.0.0.1 |
-| DB_PORT | 本项目本地模板为 9912 |
-| DB_NAME / DB_USER / DB_PASSWORD | PostgreSQL 数据库、账户和密码；密码必填 |
-| USE_MOCK_SOURCE | false；true 使用固定模拟内容 |
-| YOUTUBE_API_KEY | 仅真实 YouTube 采集需要 |
-| OLLAMA_BASE_URL | http://localhost:11434；仅支持本机回环 HTTP |
-| OLLAMA_TRACE_ENABLED | false；显式开启后将完整请求/响应写入 backend/logs/ollama_trace.jsonl，可能含私人内容 |
-| OLLAMA_MODEL | 使用 ollama list 中已安装模型的完整名称，无业务代码默认值 |
-| SCHEDULER_ENABLED | false；是否启用自动任务 |
-| SCAN_INTERVAL_MINUTES | 60；支持 0.1–10080 分钟 |
-| NOTIFICATIONS_ENABLED | false；是否启用 Windows 通知 |
+| DB_HOST / DB_PORT | 127.0.0.1 / 9912 |
+| DB_NAME / DB_USER / DB_PASSWORD | 数据库与凭据，密码必填 |
+| USE_MOCK_SOURCE | false；true 仅模拟采集 |
+| YOUTUBE_API_KEY | 真实 YouTube 需要有效 Key 与配额 |
+| OLLAMA_BASE_URL | http://localhost:11434；只允许本机回环 HTTP |
+| OLLAMA_MODEL | `ollama list` 中的完整模型名称，例如本机 `deepseek-r1:8b` |
+| OLLAMA_NO_THINK_HINT | false；可选 `/no_think` 兼容提示，仅适用于支持该提示的模型，不保证停止 thinking |
+| OLLAMA_TRACE_ENABLED | false；显式开启才保存完整 Prompt 和模型回复 |
+| SCHEDULER_ENABLED | false；是否自动更新 enabled Topic |
+| SCAN_INTERVAL_MINUTES | 60；0.1～10080 分钟 |
+| NOTIFICATIONS_ENABLED | false；Windows 通知开关 |
 
-脚本不会自动安装服务、注册开机启动、下载模型或修改 Windows 配置。
-
-## MockSource 与 Ollama
-
-设置 `USE_MOCK_SOURCE=true` 可进行本地验收。每个 query 返回 3 条 ID 稳定的模拟内容，重复扫描计入 duplicates。链接是本地占位地址，模拟内容不代表真实新闻。
-
-启动 Ollama，运行 `ollama list`。验收机器使用 `deepseek-r1:8b`，请按自己的实际安装情况配置 `OLLAMA_MODEL`。MockSource 只模拟采集，分析和生成简报仍调用真实本地模型。AI 输出已标注，可能存在错误；系统不抓取全文。
+Trace：`backend/logs/ollama_trace.jsonl`。可能含私人 Topic、原文和模型回复，不能公开上传；关闭后不会自动删除历史文件。
 
 ## 日常使用
 
-1. 在“总览”查看最新简报、主题动态和处理概况。
-2. 在“我的主题”创建关注对象，点击“一键更新”。
-3. 依次观察“采集内容 → 逐条分析 → 生成简报”；每次最多分析 20 条未处理内容。
-4. 相关摘要满足条件时保存简报，否则明确跳过；失败显示具体阶段和已完成数量。
-5. 在“情报简报”阅读全文，按主题筛选并切换历史快照。
-6. 高级操作保留“仅扫描 / 仅分析未处理内容 / 仅生成简报”；单条可重新分析。
+1. 创建 Topic，描述主要关注需求，逐条添加包含与排除条件。
+2. 阈值默认 0.80，表示 AI 估计符合度达到 80%；它不是客观概率、准确率或传播热度。
+3. 点击“一键更新”，查看实际查询和每阶段数量；每轮最多分析 20 条待处理、失败或配置过期 Item。
+4. 只有 `score >= threshold` 且 `exclusion_status=not_excluded` 才有效；uncertain 或明确规则冲突进入待复核。
+5. 查看 Item 的理由与原始 metadata；无效内容仍保留，可手动重新分析。来源身份未知时不能仅凭频道名认定官方/粉丝。
+6. 在简报页阅读中文简报与来源快照。默认从最高符合度、较新的有效内容中选最多 15 条，整合成最多 10 单元。
+7. 高级操作可独立扫描、分析待处理或过期内容、生成简报。显式手动生成会保存新快照；自动流程仅在有效输入指纹改变时生成。
 
-一键更新复用 Scheduler 的 TopicUpdateService，不是三套独立流程。无变化不会重复分析或生成自动简报；简报失败后再次更新可用已保存分析恢复。真实 YouTube 再次更新仍消耗搜索配额；可用高级操作只重试分析或简报。
+同一 Topic 的更新、分析、规则编辑、删除与恢复使用进程内互斥，忙碌返回 409。进度是本次 NDJSON 响应，不是永久任务；断线后应刷新已保存结果再决定重试。
 
-同一个 Topic 的更新、扫描、分析、生成、编辑和删除使用进程内互斥，重复请求返回 409。读取不受影响。页面刷新或离开后无法恢复实时步骤，已有提交数据仍在；当前调用可能仍在完成，先刷新查看结果，不要猜测完成百分比。
+### 符合度与热度
 
-自动运行时设置 `SCHEDULER_ENABLED=true`，使用单个后端进程，不使用 reload 或多个 worker。首次等待配置间隔；后续在上一轮完成后再等待。每轮每个 Topic 最多分析 20 条待处理内容，无待纳入的相关摘要则不生成简报。Scheduler 与手动操作共用 Topic 锁，忙碌主题会被跳过。
+符合度来自 AI 的语义判断；热度仅来自对应平台实际统计。YouTube 热度使用播放量每日速率的对数归一化，以及可用点赞率/评论率；缺失指标不补 0，发布时间或播放量未知则热度未知。低热度不影响有效性，不与其他 Source 横向比较。算法详见 [系统设计](docs/architecture/system-design.md)。
 
-设置 `NOTIFICATIONS_ENABLED=true` 可启用通知。Windows 将其归到 Windows PowerShell；专注助手或通知设置可能阻止横幅。手动生成简报不通知。安全关闭自动任务：Ctrl+C → 设置 `SCHEDULER_ENABLED=false` → 重启。
+### 配额与能力边界
+
+一次 Scan 最多 2 次 `search.list`（各 15 条）及 1 次批量 `videos.list(part=statistics)`，无分页、无自动网络重试。重复扫描也消耗配额；查询不是来源身份认证。实际配额以 Google Cloud Console 和官方文档为准：[search.list](https://developers.google.com/youtube/v3/docs/search/list)、[videos.list](https://developers.google.com/youtube/v3/docs/videos/list)。
+
+仅获取视频 metadata 和统计，**未观看或理解完整视频，不下载视频、不抓字幕或全文**。网络/配额导致部分搜索或统计失败时，在已有发现的情况下保留 Raw Item 并返回 warnings；没有任何成功搜索则明确失败。
+
+### MockSource、Scheduler 与通知
+
+`USE_MOCK_SOURCE=true` 时每个 query 返回 3 条稳定模拟内容；2 查询可返回 6 条，改变查询可能产生新的模拟 ID。它不是正式来源，内容和本地链接不代表真实新闻。MockSource 不模拟 AI，默认分析仍需要本地 Ollama。
+
+Scheduler 与手动更新使用同一 TopicUpdateService。安全试用时先保持关闭；开启后使用单个后端进程，不使用 reload 或多 worker。没有有效摘要输入变化时跳过自动简报；显式重新分析且结果未变也不会重复自动生成。Windows 通知只在本轮有新有效 Item 且已保存新 Digest 时发送，错误只写日志。安全关闭：Ctrl+C → `SCHEDULER_ENABLED=false` → 重启。
+
+### 删除与回收站
+
+Item 的原文和 AI 结果一起移入/恢复；Digest 保留全文与来源快照。回收站不自动清理，不参与分析、统计或简报输入。软删除 Item 仍占用来源唯一标识，重复扫描不会自动恢复；永久删除后可能再次采集。软删除 Digest 仍作为自动生成指纹水位，避免自动重建；永久删除最新 Digest 后可能重新生成。
+
+**删除整个 Topic 会永久级联删除全部内容及回收站，无法恢复。** 删除 Item 不改写已有简报来源快照。
 
 ## 验证
 
@@ -108,10 +116,9 @@ cd ..
 cd backend
 .\.venv\Scripts\Activate.ps1
 $env:RUN_POSTGRES_TESTS='1'
-$testTempRoot = 'D:\pytest-temp'
-New-Item -ItemType Directory -Path $testTempRoot -Force | Out-Null
-$testTempPath = Join-Path $testTempRoot ([guid]::NewGuid().ToString('N'))
-python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
+New-Item -ItemType Directory -Path D:\pytest-temp -Force | Out-Null
+$testTempPath = Join-Path 'D:\pytest-temp' ([guid]::NewGuid().ToString('N'))
+python -m pytest -q --tb=short -p no:cacheprovider --basetemp $testTempPath
 Remove-Item Env:\RUN_POSTGRES_TESTS
 python -m alembic current
 python -m alembic check
@@ -121,35 +128,18 @@ npm run lint
 npm run build
 ```
 
-自动化测试不调用真实模型或信息源，不弹系统通知。实际验收见 [v0.1.0 验收记录](docs/development/v0.1.0-acceptance.md)，详细操作见 [本地开发指南](docs/development/local-development.md)。
+每次 pytest 必须使用新 GUID 目录，不使用 Windows 默认 Temp；自动测试不调用真实 YouTube/Ollama，不弹通知。详细人工步骤见 [本地开发](docs/development/local-development.md)。
 
-## 当前限制
+## 当前限制与后续规划
 
-- 单用户本地应用，无登录、多用户、云部署或手机 App。
-- 真实 YouTube 搜索需要 Key 和配额，暂无其他真实信息源。
-- AI 依赖本地 Ollama 和计算资源，推理可能超时。
-- Windows 通知需要交互登录会话及允许通知的系统设置。
-- 不安装后台系统服务，不提供开机自启或 Windows 重启、休眠后的恢复机制。
-- Scheduler 与 Topic 锁仅在单进程内生效，无持久化重试队列或页面进度恢复。
-- `(source, external_id)` 全局唯一，同一 Item 只属于一个 Topic。
-- 内容及简报历史尚无分页；概览近期列表最多 5 条。
-- 无事件聚类、embedding、Vector DB 或 RAG。
+- 单用户 Windows 本机应用，无登录、多用户、云部署、手机 App、Email 或 Telegram。
+- 真实来源仅 YouTube；没有 RSS / Web Search、视频下载、字幕或全文抓取。
+- Query Builder 是可解释模板/关键词提取，不是任意语言的完整意图解析器；复杂规则语义与身份判断仍可能需要人工复核。
+- AI 分数不是可靠性保证；8B 模型可能误判、超时或格式失败。语言/格式/指令漂移检查不能证明事实正确，也不能彻底消除 prompt injection。
+- 热度是 YouTube 内部启发式，不是跨来源的客观热榜。
+- 整合非常保守，不做通用事件聚类；无法确认同一事件就分开，可能漏合并。
+- `(source, external_id)` 全局唯一，一个 Item 只归属一个 Topic，暂无多 Topic 关联。
+- 没有分页、持久化队列、跨进程锁、断线进度恢复、开机自启或休眠恢复。
+- 没有 Embedding、Vector DB、RAG 或新 AI Agent 框架。
 
-## 后续规划（尚未实现）
-
-- 根据本地使用反馈改善可靠性与易用性。
-- 按实际需要评估分页和更多信息源。
-- 本地流程稳定后再评估更高级的内容组织方式。
-
-本次没有开发 v0.2.0 功能。v0.1.1 验收详情见 [本轮验收记录](docs/development/v0.1.1-acceptance.md)。
-
-
-## 删除与回收站
-
-采集内容卡片、主题简报和简报阅读页均可将单条内容移入回收站；从侧边导航进入“回收站”可预览、恢复或永久删除。Item 的原始信息和 AI 分析一起保留和恢复，简报保留完整文本。回收站不自动清理。
-
-回收站内容不参与首页统计、AI 分析和简报输入。软删除 Item 仍占用 `(source, external_id)`，再次扫描不会自动恢复；永久删除后可能重新采集。已有 Digest 是独立快照，删除 Item 不会改写它。软删除的 Digest 仍用于自动生成的时间水位，避免无变化时自动重新生成；永久删除最新 Digest 后，自动流程可能再次生成简报。
-
-**删除整个 Topic 仍是不可恢复的级联删除，包括该 Topic 的回收站内容。**
-
-升级本次版本前停止 SignalRadar，在 `backend/` 激活虚拟环境并执行 `python -m alembic upgrade head`；最新 head 为 `0005`，再执行 `python -m alembic current` 和 `python -m alembic check`。升级只增加 nullable 字段与索引，不删除已有内容。
+后续优先根据实际使用反馈改进可靠性、人工复核体验与分页，不将以上未实现功能标为完成。

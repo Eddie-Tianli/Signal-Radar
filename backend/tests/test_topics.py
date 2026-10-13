@@ -31,10 +31,14 @@ def client(tmp_path):
         engine.dispose()
 
 
+def legacy(data):
+    return {key: data[key] for key in ("id", "name", "description", "enabled")}
+
+
 def test_create_topic(client):
     response = client.post("/api/topics", json={"name": "Christopher Nolan"})
     assert response.status_code == 201
-    assert response.json() == {
+    assert legacy(response.json()) == {
         "id": 1,
         "name": "Christopher Nolan",
         "description": None,
@@ -47,7 +51,7 @@ def test_get_topic(client):
     created = client.post("/api/topics", json=payload).json()
     response = client.get(f"/api/topics/{created['id']}")
     assert response.status_code == 200
-    assert response.json() == {"id": created["id"], **payload}
+    assert legacy(response.json()) == {"id": created["id"], **payload}
 
 
 def test_list_topics(client):
@@ -68,8 +72,8 @@ def test_update_topic(client):
     response = client.put(f"/api/topics/{created['id']}", json=payload)
     expected = {"id": created["id"], **payload}
     assert response.status_code == 200
-    assert response.json() == expected
-    assert client.get(f"/api/topics/{created['id']}").json() == expected
+    assert legacy(response.json()) == expected
+    assert legacy(client.get(f"/api/topics/{created['id']}").json()) == expected
 
 
 def test_put_replaces_optional_fields(client):
@@ -78,7 +82,7 @@ def test_put_replaces_optional_fields(client):
     ).json()
     response = client.put(f"/api/topics/{created['id']}", json={"name": "Cinema"})
     assert response.status_code == 200
-    assert response.json() == {
+    assert legacy(response.json()) == {
         "id": created["id"], "name": "Cinema", "description": None, "enabled": True
     }
 

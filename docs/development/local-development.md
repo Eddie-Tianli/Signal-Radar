@@ -13,7 +13,7 @@
 .\start-signalradar.ps1
 ```
 
-脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration 0005、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
+脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration 0006、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
 
 Ollama 离线会记录 `Ollama unavailable - AI analysis will fail until Ollama is started.`，应用仍能启动。数据库或必需文件缺失则阻止启动并提示处理方式。访问 http://localhost:3000 和 http://127.0.0.1:8000/api/status。后者保留 name/version/status，增加 database、ollama、scheduler、notifications；available 只表示 Ollama API 响应，不保证 OLLAMA_MODEL 已配置和安装。
 
@@ -53,8 +53,8 @@ MockSource 不创建 HTTP 客户端；前端只请求本地后端，后端连接
 1. 启动 Ollama；尚未运行时可执行 `ollama serve`。
 2. 使用 `ollama list` 获取已安装模型的完整名称；用 `Invoke-RestMethod http://localhost:11434/api/tags` 检查服务。
 3. 设置 OLLAMA_BASE_URL=http://localhost:11434、OLLAMA_MODEL 为实际模型名称，USE_MOCK_SOURCE=true。不会自动下载模型；修改后重启。
-4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0005 head）。
-5. 创建 Topic 并扫描，在内容卡片点击“分析”，或“分析未处理内容”。先少量测试，本地模型可能较慢，单次后端调用超时为 120 秒。
+4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0006 head）。
+5. 创建 Topic 并扫描，在内容卡片点击“分析”，或“分析未处理内容”。先少量测试，本地模型可能较慢，单次后端调用超时为 180 秒。
 6. 查看相关性、评分、分类、AI 摘要和分析时间；刷新后仍应存在。
 
 Swagger 也可使用 `POST /api/items/{item_id}/analyze` 或 `POST /api/topics/{id}/analyze?limit=1`。数据库检查语句：
@@ -126,7 +126,7 @@ $attemptEvents | Where-Object { $_.event -match 'error|failed|retry' } | Convert
 ## Digest 与自动任务
 
 1. 设置 USE_MOCK_SOURCE=true、SCHEDULER_ENABLED=false，启动已配置模型的 Ollama。
-2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0005 head。
+2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0006 head。
 3. 启动前后端，创建 Topic，点击“扫描”和“分析”。
 4. 至少一条内容需被判断为相关，否则“生成简报”返回 409；全部不相关也可能是正常模型判断。
 5. 点击“生成简报”，检查 AI 标记、标题、引用数、时间和摘要；“查看历史简报”读取保存的快照。
@@ -227,7 +227,7 @@ npm run build
 
 每次最多分析 20 条待处理内容；Digest 最多使用 10 条已分析、相关且摘要非空的 Item。按 relevance_score DESC NULLS LAST、发布时间或采集时间 DESC、id DESC 稳定排序。不相关内容保留，最终 Digest 不读取原始 snippet。输出为中文纯文本，不伪造引用关系。
 
-深度推理模型的 thinking 也消耗 num_predict。旧 Trace 中 2048 预算耗尽，出现 HTTP 200 但 content 为空；现 Digest 第一次 4096、重试 8192，每次 180 秒。空回复和超时有独立提示，完整原因查看 Trace。不要将 thinking 当作最终正文。单条分析仍为 120 秒。
+深度推理模型的 thinking 也消耗 num_predict。旧 Trace 中 2048 预算耗尽，出现 HTTP 200 但 content 为空；现 Digest 第一次 4096、重试 8192，每次 180 秒。空回复和超时有独立提示，完整原因查看 Trace。不要将 thinking 当作最终正文。v0.2.0 单条分析为 180 秒。
 
 页面刷新或离开后不会恢复处理中进度，当前推理可能仍在完成。刷新结果再决定重试，409 表示该主题仍忙。锁只在单进程内生效，使用单个 Uvicorn，启用 Scheduler 时不要加 --reload 或多个 worker。没有后台任务系统，当前终端仍需保持运行。
 
@@ -258,7 +258,7 @@ npm run build
 
 ## 回收站验证
 
-先停止旧后端并执行 `python -m alembic upgrade head`，确认 `alembic current` 为 `0005 (head)` 且 `alembic check` 无差异，然后启动应用。
+先停止旧后端并执行 `python -m alembic upgrade head`，确认 `alembic current` 为 `0006 (head)` 且 `alembic check` 无差异，然后启动应用。
 
 1. 使用 MockSource 采集并分析，生成一条简报。
 2. 对 Item 点击“移入回收站”，确认默认列表和首页计数减少；再次扫描不重新出现。
@@ -272,3 +272,75 @@ npm run build
 
 
 本次回收站验证结果：后端完整测试（含真实 PostgreSQL 集成测试）191 passed；前端 API 测试 8 passed；lint / build 通过；本机 PostgreSQL 已升级至 0005 (head)，Alembic check 无差异。测试不调用真实 AI / YouTube、不弹出 Windows 通知，PostgreSQL 测试新增数据通过外层事务回滚。旧运行进程尚未加载新增 API / 路由，需要重启 SignalRadar 后再进行上述浏览器交互验收。
+
+
+## v0.2.0 本地验收
+
+### 升级与安全准备
+
+1. 保留现有 `.env`，先关闭 Scheduler 和通知。停止旧 SignalRadar 进程，确认 PostgreSQL / Ollama 已运行。
+2. 使用与数据库版本匹配的 `pg_dump -Fc` 保存到本机私有目录，并用 `pg_restore --list` 校验。不要把备份或密码放进公开仓库。恢复备份会覆盖目标数据，需单独审查，不在日常验收自动执行。
+3. 在 backend 虚拟环境执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，应为 `0006 (head)` 且无差异。迁移保留原数据，新增默认 0.80、规则表、分析解释/指纹、热度和来源快照。
+4. `USE_MOCK_SOURCE=true` 仅模拟采集；分析仍调用 `OLLAMA_MODEL` 指定的本机模型。使用现有启动脚本构建并启动，不复用旧构建。
+
+### Topic / Item / Digest
+
+1. 创建 Topic：名称“ChatGPT”，描述关注模型发布和能力变化；添加包含条件、排除“主要讨论 GPT-5.6（仅比较提及不算）”，默认阈值 0.80。
+2. 单独添加、编辑、停用和删除规则，保存后生效。相同包含/排除条件应提示冲突并进入 review。
+3. 一键更新，展开实际搜索词；一般 1 条、内置特定模板最多 2 条，Mock 每查询 3 条。它不是正式新闻，不用 Mock 验证真实身份或热度。
+4. 查看每条 Item 原始来源、发布时间与 AI 符合度、理由、排除状态、事实摘要。热度与符合度分开；Mock 热度必须未知。切换有效/无效/待复核/失败/待分析、最低符合度和排序。
+5. 不符合或排除内容仍在数据库；uncertain 不自动进入简报。检查有效内容的中文简报、来源列表、同单元来源和安全外链。
+6. 修改描述/阈值/启用规则，刷新内容确认旧分析标为 pending / analysis_stale；旧摘要可回看，但不直接用于新 Digest。高级操作可只分析待处理/过期内容，单条可主动重新分析。
+7. 无变化再更新不重复分析/自动简报。相同事实仅评分/分类浮动不生成新简报。规则改变属于配置变化，重新确认后可生成对应简报。
+8. 刷新、重启后数据与来源快照仍存在；旧简报没有 sources 时说明历史局限。回收站移入/恢复、永久删除确认保留原行为；恢复时规则若已变仍需重分析。
+
+### 真实 YouTube 与配额
+
+配置有效 `YOUTUBE_API_KEY`，`USE_MOCK_SOURCE=false`，第一次先只手动扫描一个 Topic。每 Scan 最多 2 search.list + 1 批量 videos.list，单次 HTTP 15 秒，无分页或网络重试。统计为实际计数，缺失 null，不是模型生成。查看 last_queries / warnings、数据库 popularity_metrics、UI 指标依据。外部网络或配额异常应明确显示，部分发现结果应保留。
+
+平台搜索只能发现 metadata，不是完整视频理解；官方/粉丝身份不能仅凭频道名确认。符合度阈值不是模型准确率；热度公式、缺失处理与整合局限见 System Design。实际配额以 Google Cloud Console 和官方文档为准。
+
+### Scheduler 与错误
+
+手动流程通过后才启用 Scheduler，设置合理 SCAN_INTERVAL_MINUTES。应仅处理 enabled Topic、同规则下未完成/失败/过期内容；确认无变化不重复生成，并且同 Topic 不重入、单 Topic 错误不影响其他 Topic。通知仅在自动任务本轮有新有效内容且简报已保存时发送。
+
+Ollama 不可用时 Raw Item 已保存，分析标 failed、已完成摘要仍保留。通过高级操作或单条 Analyze 重试，不要为了重试分析反复消耗 YouTube 查询配额。关停：Ctrl+C → SCHEDULER_ENABLED=false → 重启。
+
+### 自动测试
+
+所有自动测试使用 Fake Provider / MockTransport，不调用真实 AI / YouTube，不弹通知。每次测试创建 `D:\pytest-temp` 下的新 GUID 目录，并加 `-p no:cacheprovider --basetemp`，不要把系统 Temp 的 PermissionError 当业务错误。
+
+```powershell
+cd D:\Projects_ltl\Signal-Radar\backend
+.\.venv\Scripts\Activate.ps1
+$env:RUN_POSTGRES_TESTS='1'
+$testTempPath = Join-Path 'D:\pytest-temp' ([guid]::NewGuid().ToString('N'))
+python -m pytest -q --tb=short -p no:cacheprovider --basetemp $testTempPath
+Remove-Item Env:\RUN_POSTGRES_TESTS
+python -m alembic current
+python -m alembic check
+cd ..\frontend
+npm run test:api
+npm run lint
+npm run build
+```
+
+真实模型与浏览器验收单独记录，不将 Fake AI 的固定符合度当真实模型质量证明。Trace 调试沿用上文开关、request_id 和私有内容保护约定。
+
+
+v0.2.0 的 Analyze / Digest 均使用最多 24576 上下文；输入过长会明确失败，不静默丢规则。Item 预算 8192 / 超时 180 秒，Digest 4096 / 8192、最多一次 retry；较大 RAM/VRAM 与本地模型吞吐会影响耗时。Digest 指令已精简，正文输出说明、schema、错误来源编号、未知 URL 等被拒绝。当前年月不作为事件日期证据。
+
+Topic 卡片的 analysis_state / analysis_counts 是当前持久化状态聚合，“最近成功分析”是成功时间，不伪造失败事件时间。规则变化后失败重分析仍保留历史摘要指纹和过期提示。
+
+
+### v0.2.0 本机模型兼容与验收
+
+当前本机配置名为 `deepseek-r1:8b`，但 `/api/show` 实际报告 family 为 `qwen3`（8.2B，Q4_K_M）。模型标签不能代表模型的实际控制能力；应以本机返回为准。`think=false` 探测仍产生 thinking，不据此假设推理已关闭。
+
+新增可选 `OLLAMA_NO_THINK_HINT=false`。若模型支持 Qwen 风格 `/no_think` 提示，可设为 true 并重启：它仅在 system 指令前加入提示，不替换模型，不绕过 JSON / 事实校验，不增加 retry，不是安全边界，也不保证停止 thinking。当前本机私有 `.env` 已设为 true，其他凭据保持原值，文件仍被 Git 忽略。参考 [Qwen 官方说明](https://qwen.readthedocs.io/en/stable/getting_started/quickstart.html)；模型能力与 Ollama 版本有关。
+
+实际验收中，模型出现过输出预算耗尽、schema 回显、无来源年份；对应结果已被拒绝。最终当前 Provider 工厂使用一条明确标注“模拟”的资料，首轮 JSON 失败、一次重试后保存了中文简报和来源快照。此结果证明本地调用链可用，不代表所有新闻的语义质量已获保证。自动测试不依赖该真实模型。
+
+一次 Analyze 最多 180 秒，一键更新最多 20 条；全量历史重分析可能耗时较长。建议先少量分析、核对理由，再开启 Scheduler；保持单个后端进程。条件涉及相对时间时，指纹不会随时钟自动变化，应主动重新分析检查时效。
+
+完整结果、迁移备份与页面验收见 [v0.2.0 实施记录](v0.2.0-implementation.md)。

@@ -110,20 +110,22 @@ def test_postgresql_mock_scan():
                         return DigestResult(title="本地采集动态简报", summary="Mock 采集流程已完成，模拟内容已保存。本地测试结果仍需核对。")
 
                     def analyze(self, data):
-                        return AnalysisResult(relevant=False, relevance_score=0.1,
-                                              category="other", summary="Mock summary.")
+                        return AnalysisResult(relevance_reason="主题判断理由", exclusion_status="not_excluded", exclusion_reason="", relevant=False, relevance_score=0.1,
+                                              category="other", summary="模拟摘要。")
                 item_id = ItemService(session).list_recent_topic_items(topic.id)[0].id
                 analyzed = AnalysisService(session, FakeAI()).analyze(item_id)
                 assert analyzed.ai_relevant is False
                 assert analyzed.ai_analyzed_at.utcoffset() is not None
                 session.expire_all()
-                assert session.get(ItemRecord, item_id).ai_summary == "Mock summary."
+                assert session.get(ItemRecord, item_id).ai_summary == "模拟摘要。"
                 with pytest.raises(IntegrityError):
                     with session.begin_nested():
                         session.get(ItemRecord, item_id).ai_relevance_score = 1.5
                         session.flush()
-                session.get(ItemRecord, item_id).ai_relevant = True
-                session.commit()
+                class RelevantAI(FakeAI):
+                    def analyze(self, data):
+                        return super().analyze(data).model_copy(update={"relevance_score": .9})
+                AnalysisService(session, RelevantAI()).analyze(item_id)
                 digest = DigestService(session, FakeAI()).generate(topic.id)
                 session.expire_all()
                 assert DigestService(session, FakeAI()).history(topic.id)[0].id == digest.id
@@ -162,5 +164,38 @@ def test_postgresql_recycle_bin_roundtrip(kind):
                 move_to_trash(kind, record_id, session)
                 assert permanently_delete(kind, record_id, session).status_code == 204
                 assert session.get(type(record), record_id) is None
+        finally:
+            transaction.rollback()
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Opt-in local PostgreSQL check")
+def test_postgresql_intent_constraints():
+    from app.topics.models import TopicRuleRecord
+    with get_engine().connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(connection, join_transaction_mode="create_savepoint") as session:
+                topic = TopicRecord(name="Intent constraint test")
+                session.add(topic)
+                session.flush()
+                with pytest.raises(IntegrityError):
+                    with session.begin_nested():
+                        topic.relevance_threshold = 1.1
+                        session.flush()
+                session.refresh(topic)
+                assert topic.relevance_threshold == .8
+                with pytest.raises(IntegrityError):
+                    with session.begin_nested():
+                        session.add(TopicRuleRecord(topic_id=topic.id, rule_type="wrong", text="bad"))
+                        session.flush()
+                item = ItemRecord(topic_id=topic.id, source="test", external_id=str(uuid4()), title="Test", url="https://example.com")
+                session.add(item)
+                session.flush()
+                for field, value in (("analysis_status", "invalid-status"), ("exclusion_status", "wrong"), ("popularity_score", 1.2)):
+                    with pytest.raises(IntegrityError):
+                        with session.begin_nested():
+                            setattr(item, field, value)
+                            session.flush()
+                    session.refresh(item)
         finally:
             transaction.rollback()

@@ -8,7 +8,7 @@ def test_status_backward_compatible_and_sanitized(monkeypatch):
     monkeypatch.setattr("app.main.dependency_status", lambda: {"database": "connected", "ollama": "unavailable"})
     with TestClient(app) as client:
         result = client.get("/api/status").json()
-        assert result == dict(name="SignalRadar API", version="0.1.1", status="running",
+        assert result == dict(name="SignalRadar API", version="0.2.0", status="running",
                              database="connected", ollama="unavailable", scheduler="disabled", notifications="disabled")
         assert client.get("/").json() == {key: result[key] for key in ("name", "version", "status")}
 
@@ -26,7 +26,7 @@ def test_ollama_offline_does_not_block_preflight(monkeypatch):
     monkeypatch.setattr(local_runtime, "dependency_status", lambda: {"database": "connected", "ollama": "unavailable"})
     class Connection:
         def scalar(self, statement):
-            return "0005"
+            return "0006"
     class Engine:
         @contextmanager
         def connect(self):

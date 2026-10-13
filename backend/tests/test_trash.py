@@ -49,7 +49,9 @@ def test_delete_restore_permanent_and_dashboard(scan_client, kind):
             assert repeated["created"] == 0 and repeated["duplicates"] == 2
         assert client.post(permanent + "/restore").status_code == 204
         assert client.get("/api/trash").json()[kind] == []
-        assert original in client.get(base + ("/items" if kind == "items" else "/digests")).json()
+        restored = next(row for row in client.get(base + ("/items" if kind == "items" else "/digests")).json() if row["id"] == original["id"])
+        # Rescanning may refresh real metrics timestamps, but never raw/AI content.
+        assert {k: v for k, v in restored.items() if k not in ("popularity_score", "popularity_metrics")} == {k: v for k, v in original.items() if k not in ("popularity_score", "popularity_metrics")}
         client.delete(path).raise_for_status()
         assert client.delete(permanent).status_code == 204
         assert client.post(permanent + "/restore").status_code == 404
@@ -140,7 +142,7 @@ def test_0004_upgrade_preserves_content_and_matches_metadata(engine):
         connection.execute(text("INSERT INTO items (topic_id, source, external_id, title, url, ai_summary) VALUES (1, 'test', 'old', 'Original', 'https://example.com', 'Saved AI summary')"))
         connection.execute(text("INSERT INTO digests (topic_id, title, summary, item_count) VALUES (1, 'Saved brief', 'Original brief', 1)"))
         command.upgrade(config, "head")
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0005"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
         assert connection.execute(text("SELECT title, ai_summary, deleted_at FROM items")).one() == ("Original", "Saved AI summary", None)
         assert connection.execute(text("SELECT summary, deleted_at FROM digests")).one() == ("Original brief", None)
         for table in ("items", "digests"):

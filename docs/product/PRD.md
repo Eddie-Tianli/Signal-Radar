@@ -1,30 +1,45 @@
-# SignalRadar 产品需求（PRD）
+# SignalRadar 产品需求（v0.2.0）
 
-## 阶段基线
+## 产品目标与当前范围
 
-本文保留早期“信息采集”规划的设计语义：当时主题（Topic）管理和 PostgreSQL 持久化已完成，内容采集是下一阶段。下文 Planned 描述历史设计范围，不代表当前代码或 migration 状态；当前功能清单以仓库 README 为准。
+面向 Windows 单用户本地运行，围绕主题（Topic）的自然语言关注意图，采集统一内容（Item），通过本地 AI 分析和程序筛选，生成有来源依据的中文简报（Digest）。已有 Scheduler、通知、回收站和一键更新继续保留。
 
-## 信息采集（Information Collection / Content Collection）— Planned
+## Topic 与检索意图
 
-### 目标
+name 是主题标识与检索参考；description 是主要语义依据；include_rules 进一步限定；exclude_rules 是禁止收录条件。每条规则可独立增删改、启用/停用，属于 include 或 exclude，每类最多 10 条、每条最多 500 字。relevance_threshold 默认 0.80，可配置 0～1。
 
-由用户定义的 Topic 触发采集，将外部内容统一转换为内容条目（Item），并通过同一接口边界支持多个信息源（Source）。
+例：ChatGPT；描述“搜集 OpenAI 官方发布的 ChatGPT 新模型名称、发布时间、能力变化和公告”；排除“主要讨论 GPT-5.6 的内容”。例：诺兰新电影；描述“制作、选角、拍摄和上映信息”；排除“粉丝个人发布”。仅字面提及排除词不等于命中；无法核实身份的内容待复核，不冒充官方认证。
 
-### 预期流程
+## Information Collection / Content Collection
 
-1. Topic 提供采集上下文和 query。
-2. Collection Service 调用选定的 SourceAdapter。
-3. Adapter 将平台返回的数据转换为统一 Item 字段。
-4. 校验后关联 Topic，保存到 PostgreSQL。
-5. 重复的 `(source, external_id)` 不创建新记录。
+Topic → Query Builder → SourceAdapter → Raw Item → PostgreSQL。当前 Source 为官方 YouTube API 和开发测试 MockSource；RSS / Web Search 未实现。
 
-本阶段规划以用户手动触发为起点；自动任务（Scheduler）和后台任务基础设施不属于这份早期设计。具体 API 与界面交互在实现采集时明确。
+Query Builder 采用确定性少量模板与关键词提取，最多 2 查询，排除条件不机械拼入搜索。实际查询与时间可查看。一次 Scan 最多 3 HTTP 请求，无分页；平台不能表达的限定条件在后续分析判断。
 
-### 计划验收标准
+原始 title / snippet / author 等始终保留，筛选不物理删除数据。系统仅获得 YouTube metadata 和统计，不能声称理解完整视频，不下载、抓字幕或全文。
 
-- 每个 Item 关联已有 Topic；不同来源输出相同内部结构。
-- title 和 url 必填；author、snippet 和 published_at 可以缺失。
-- collected_at 由系统记录，保留来源标识以识别重复内容。
-- 后续 Source 复用同一持久化模型。
+## AI 与有效性
 
-在这份历史规划中，YouTube、RSS、Web Search 仅为候选来源，AI 尚未开始；全文抓取、embedding、语义去重、事件聚类、简报（Digest）和登录均不属于该阶段。此处不将候选功能标记为已完成，也不撤销后续已实现能力。
+AI 逐条返回符合度、符合理由、排除状态与理由、分类和 1～3 句事实摘要。来源文本一律不可信，不能覆盖模型系统任务。摘要用中文，保留专有名词及传闻/预测的不确定性，不补外部事实。
+
+程序按同一标准判定：pending 待分析/配置过期；valid 分数达阈值且 not_excluded；invalid 低分或 excluded；review 为 uncertain 或规则冲突；failed 为调用/校验失败。AI relevant 布尔值不决定最终有效性，热度也不决定有效性。失败可以重试，规则改变使旧分析过期；原始信息不变。
+
+符合度来自 AI，热度来自 YouTube 实际播放、点赞、评论及发布时间，由程序归一化；缺失显示未知，不混用指标名称，不跨来源强行比较。
+
+## 信息整合与 Final Digest
+
+当前有效且摘要非空的内容按符合度、时间排序，最多选择 15 条，保守整合为最多 10 单元。相同 URL 或严格符合标题/摘要/时间一致性条件才合并，不将不同版本、日期、否定事件或不明内容强行归并。每个单元保留原始 Item ID 和来源快照。
+
+Digest 只组织已筛选事实摘要，不重新判断相关性，不传原始 snippet。中文标题和正文可包含核心动态、主要信息、值得关注，有事实才输出对应内容。程序保存来源列表；模型可引用已有 [U1] 编号，不得造来源。历史简报保留，旧版没有来源快照时明确提示。
+
+## 前端与自动流程
+
+在既有中文浅色视觉系统上增加规则编辑、阈值、实际查询、状态原因、符合度/热度分开展示、状态筛选与评分/时间排序。回收站保留恢复能力。
+
+手动 Analyze、批量、一键更新与 Scheduler 使用同一 policy。每次更新最多分析 20 条待处理/失败/配置过期记录，单 Topic 不重入。当前分析与有效摘要输入不变时不重复处理或生成自动简报；阶段失败保留已提交数据。手动生成允许显式建立新快照。
+
+## 验收与限制
+
+自动测试使用 Fake AI / MockTransport，不访问真实互联网或弹通知；真实 YouTube / Ollama 另做手动验收并如实记录。需通过迁移检查、全部后端测试、前端 lint/build 和可用浏览器交互检查。
+
+不实现登录、多用户、云部署、新来源、Embedding、Vector DB、完整 RAG、视频下载、无限重试或新 AI 框架。模板、低成本整合及小模型都有局限，不能宣称已达到可靠事实核验或完全防注入。

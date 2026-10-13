@@ -84,3 +84,16 @@ test("missing deleted content gives a clear message", async () => {
   const service = api(async () => new Response(JSON.stringify({ detail: "内容不存在或已被永久删除。" }), { status: 404 }));
   await assert.rejects(service.moveToTrash("items", 12), /内容不存在或已被永久删除/);
 });
+
+
+test("Topic intent configuration preserves rule IDs and threshold in HTTP body", async () => {
+  const input = { name: "ChatGPT", description: "关注模型发布", enabled: true, relevance_threshold: .85,
+    include_rules: [{ id: 12, text: "主要讨论模型能力", enabled: true }], exclude_rules: [{ text: "主要讨论旧模型", enabled: false }] };
+  const service = api(async (url, options) => {
+    assert.equal(url, "http://127.0.0.1:8000/api/topics/7");
+    assert.equal(options.method, "PUT");
+    assert.deepEqual(JSON.parse(options.body), input);
+    return new Response(JSON.stringify({ id: 7, ...input }));
+  });
+  assert.equal((await service.saveTopic(input, 7)).relevance_threshold, .85);
+});

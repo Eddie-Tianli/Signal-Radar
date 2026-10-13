@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.topics.models import TopicRecord
@@ -16,3 +16,6 @@ class DigestRecord(Base):
     topic: Mapped[TopicRecord] = relationship(back_populates="digests")
 
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+    sources: Mapped[list | None] = mapped_column(JSON)
+    input_fingerprint: Mapped[str | None] = mapped_column(String(64))

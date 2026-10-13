@@ -13,7 +13,7 @@ from app.main import app
 from test_scan import scan_client
 
 
-RESULT = dict(relevant=True, relevance_score=0.87, category="news", summary="A short factual summary.")
+RESULT = dict(relevance_reason="主题相符", exclusion_status="not_excluded", exclusion_reason="", relevant=True, relevance_score=0.87, category="news", summary="简短的事实摘要。")
 INPUT = AnalysisInput(topic_name="Nolan", topic_description=None, title="Interview",
                       snippet="A director interview", author="Studio", source="mock")
 
@@ -23,6 +23,7 @@ def test_ollama_structured_output():
         payload = json.loads(request.content)
         assert payload["format"] == AnalysisResult.model_json_schema()
         assert payload["options"]["temperature"] == 0
+        assert payload["options"]["num_predict"] == 8192
         assert payload["stream"] is False
         assert json.loads(payload["messages"][1]["content"]) == INPUT.model_dump()
         return httpx.Response(200, json={"message": {"content": json.dumps(RESULT)}})
@@ -140,7 +141,7 @@ def test_analysis_persist_and_batch_only_unanalyzed(ai_client):
     assert saved["ai_summary"] == RESULT["summary"]
     assert provider.calls[0].topic_description == "Film news"
     batch = client.post(f"/api/topics/{topic}/analyze?limit=1").json()
-    assert batch == dict(topic_id=topic, processed=1, relevant=1, irrelevant=0, failed=0)
+    assert batch == dict(topic_id=topic, processed=1, relevant=1, irrelevant=0, failed=0, review=0)
     assert client.post(f"/api/topics/{topic}/analyze").json()["processed"] == 1
     assert client.post(f"/api/topics/{topic}/analyze").json()["processed"] == 0
     assert len(provider.calls) == 3
@@ -157,5 +158,5 @@ def test_missing_and_provider_failure(ai_client):
     assert response.status_code == 503
     assert response.json()["detail"] == "Local model unavailable"
     assert client.post(f"/api/topics/{topic}/analyze").json() == dict(
-        topic_id=topic, processed=0, relevant=0, irrelevant=0, failed=3)
+        topic_id=topic, processed=0, relevant=0, irrelevant=0, failed=3, review=0)
     assert all(item["ai_analyzed_at"] is None for item in client.get(f"/api/topics/{topic}/items").json())

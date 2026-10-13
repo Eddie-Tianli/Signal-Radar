@@ -7,7 +7,7 @@ from app.collection.provider import get_source
 from app.collection.youtube import YouTubeSource
 from app.items.schemas import NormalizedItem
 from app.main import app
-from test_scan import scan_client
+from test_scan import scan_client, counts
 
 
 @pytest.fixture(autouse=True)
@@ -54,9 +54,9 @@ def test_mock_scan_api_counts_and_reads(scan_client, monkeypatch):
     app.dependency_overrides.pop(get_source)
     topic = client.post("/api/topics", json={"name": "Christopher Nolan"}).json()["id"]
     url = f"/api/topics/{topic}"
-    assert client.post(url + "/scan").json() == dict(
+    assert counts(client.post(url + "/scan").json()) == dict(
         topic_id=topic, source="mock", fetched=3, created=3, duplicates=0)
-    assert client.post(url + "/scan").json() == dict(
+    assert counts(client.post(url + "/scan").json()) == dict(
         topic_id=topic, source="mock", fetched=3, created=0, duplicates=3)
     items = client.get(url + "/items").json()
     assert len(items) == 3

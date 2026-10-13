@@ -17,7 +17,7 @@ from app.workflows.locks import TopicBusy
 from app.trash.router import router as trash_router
 
 
-app = FastAPI(title="SignalRadar API", version="0.1.1", lifespan=lifespan)
+app = FastAPI(title="SignalRadar API", version="0.2.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],

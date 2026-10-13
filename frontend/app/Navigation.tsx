@@ -14,6 +14,6 @@ export default function Navigation() {
       {links.map(([href, label, symbol]) => <Link key={href} href={href} aria-current={path === href ? "page" : undefined} className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm ${path === href ? "bg-accent-soft font-semibold text-accent" : "text-muted hover:bg-canvas"}`}><span aria-hidden="true" className="text-lg">{symbol}</span>{label}</Link>)}
       <Link href="/#system-status" className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm text-muted hover:bg-canvas"><span aria-hidden="true">◉</span>系统状态</Link>
     </nav>
-    <div className="mt-auto hidden border-t border-line p-6 lg:block"><span className="badge badge-active">本地工作空间</span><p className="mt-3 text-xs leading-6 text-muted">你的信息，在本机整理。<br/>v0.1.1 · 单用户版本</p></div>
+    <div className="mt-auto hidden border-t border-line p-6 lg:block"><span className="badge badge-active">本地工作空间</span><p className="mt-3 text-xs leading-6 text-muted">你的信息，在本机整理。<br/>v0.2.0 · 单用户版本</p></div>
   </aside>;
 }

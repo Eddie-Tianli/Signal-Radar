@@ -1,14 +1,25 @@
+export type TopicRuleInput = { id?: number; text: string; enabled: boolean };
+export type TopicRule = TopicRuleInput & { id: number; topic_id: number; rule_type: "include" | "exclude" };
+
 export type Topic = {
   id: number;
   name: string;
   description: string | null;
   enabled: boolean;
+  relevance_threshold: number;
+  include_rules: TopicRule[];
+  exclude_rules: TopicRule[];
+  rule_warnings: string[];
+  last_queries: string[] | null;
+  last_scan_at: string | null;
 };
 
-export type TopicInput = Omit<Topic, "id">;
+export type TopicInput = Pick<Topic, "name" | "description" | "enabled" | "relevance_threshold"> & { include_rules: TopicRuleInput[]; exclude_rules: TopicRuleInput[] };
 
 // 只转换展示文案，不改变后端响应、HTTP 状态或请求参数。
 const errorMessages: Record<string, string> = {
+  "AI summary contains unsupported facts. Check source metadata and retry.": "AI 摘要包含资料未支持的内容，未采用该结果。请核对来源后重新分析。",
+  "AI input is too long. Shorten Topic rules or descriptions before retrying.": "AI 输入过长，请缩短主题描述或启用的规则后重试。原始内容仍已保留。",
   "内容不存在或已被永久删除。": "内容不存在或已被永久删除。",
   "请先将内容移入回收站，再执行永久删除。": "请先将内容移入回收站，再执行永久删除。",
   "Topic operation already running. Wait and refresh.": "该主题正在处理，请稍后刷新，不要重复提交。",
@@ -72,7 +83,7 @@ async function request(path = "", options: RequestInit = {}, timeoutMs = 5000, b
       throw new Error("该主题已不存在，请刷新列表。");
     }
     if (response.status === 422) {
-      throw new Error("主题信息无效，请填写非空名称并检查其他字段。");
+      throw new Error("主题配置无效，请检查名称、阈值（0～1）和规则；每类最多 10 条，每条最多 500 字。");
     }
     throw new Error(`请求失败（HTTP ${response.status}），请稍后重试。`);
   }
@@ -104,10 +115,18 @@ export type CollectedItem = {
   ai_category: string | null;
   ai_summary: string | null;
   ai_analyzed_at: string | null;
+  analysis_status: "pending" | "valid" | "invalid" | "review" | "failed";
+  analysis_stale: boolean;
+  relevance_reason: string | null;
+  exclusion_status: "excluded" | "not_excluded" | "uncertain" | null;
+  exclusion_reason: string | null;
+  analysis_error: string | null;
+  popularity_score: number | null;
+  popularity_metrics: { viewCount?: number | null; likeCount?: number | null; commentCount?: number | null; retrieved_at?: string; algorithm?: string } | null;
 };
 
 export type ScanResult = {
-  topic_id: number; source: string; fetched: number; created: number; duplicates: number;
+  topic_id: number; source: string; fetched: number; created: number; duplicates: number; queries: string[]; warnings: string[];
 };
 
 export async function listItems(id: number, signal: AbortSignal): Promise<CollectedItem[]> {
@@ -120,22 +139,23 @@ export async function scanTopic(id: number, signal: AbortSignal): Promise<ScanRe
 }
 
 export type AnalysisBatchResult = {
-  topic_id: number; processed: number; relevant: number; irrelevant: number; failed: number;
+  topic_id: number; processed: number; relevant: number; irrelevant: number; review: number; failed: number;
 };
 
 export async function analyzeItem(id: number, signal: AbortSignal): Promise<CollectedItem> {
-  return (await request(`/${id}/analyze`, { method: "POST", signal }, 150000,
+  return (await request(`/${id}/analyze`, { method: "POST", signal }, 210000,
     "http://127.0.0.1:8000/api/items")).json();
 }
 
 export async function analyzeTopic(id: number, signal: AbortSignal): Promise<AnalysisBatchResult> {
-  // Up to ten sequential model calls, each with a backend timeout of 120 seconds.
-  return (await request(`/${id}/analyze?limit=10`, { method: "POST", signal }, 1250000)).json();
+  // Up to ten sequential model calls, each with a backend timeout of 180 seconds.
+  return (await request(`/${id}/analyze?limit=10`, { method: "POST", signal }, 1850000)).json();
 }
 
+export type DigestSource = { item_id: number; unit_id: string; title: string; source: string; url: string; author: string | null; published_at: string | null };
 export type Digest = {
   id: number; topic_id: number; title: string; summary: string;
-  item_count: number; generated_at: string;
+  item_count: number; generated_at: string; sources: DigestSource[] | null;
 };
 
 export async function generateDigest(id: number, signal: AbortSignal): Promise<Digest> {
@@ -150,12 +170,13 @@ export type UpdateProgress = {
   topic_id: number; status: "running" | "completed" | "partial" | "failed";
   stage: "scan" | "analyze" | "digest" | "complete";
   completed_steps: string[]; fetched: number; created: number; duplicates: number;
-  processed: number; relevant: number; irrelevant: number; failed: number; pending_remaining: number;
+  processed: number; relevant: number; irrelevant: number; review: number; failed: number; pending_remaining: number;
+  queries: string[]; warnings: string[];
   digest: Digest | null; digest_skipped: string | null; error: string | null; failed_stage: string | null;
 };
 
 export async function updateTopic(id: number, signal: AbortSignal, onProgress: (progress: UpdateProgress) => void) {
-  const response = await request(`/${id}/update`, { method: "POST", signal }, 2850000);
+  const response = await request(`/${id}/update`, { method: "POST", signal }, 4100000);
   if (!response.body) throw new Error("无法读取更新进度，请刷新主题查看已保存的结果。");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -183,7 +204,7 @@ export async function updateTopic(id: number, signal: AbortSignal, onProgress: (
   }
 }
 
-export type TopicOverview = { id: number; name: string; enabled: boolean; item_count: number; last_collected_at: string | null };
+export type TopicOverview = { id: number; name: string; enabled: boolean; item_count: number; last_collected_at: string | null; analysis_counts: Record<string, number>; analysis_state: string; last_analysis_at: string | null; last_queries: string[] | null; last_scan_at: string | null };
 export type DashboardData = {
   total_topics: number; enabled_topics: number; total_items: number; analyzed_items: number;
   relevant_items: number; unanalyzed_items: number; topics: TopicOverview[];

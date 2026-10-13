@@ -12,7 +12,7 @@ from app.digests.schemas import DigestInput, DigestItem
 
 
 BRIEF = {"title": "OpenAI GPT 最新进展", "summary": "OpenAI GPT 的 API 有新进展，相关效果仍值得关注。"}
-ANALYSIS = {"relevant": True, "relevance_score": 0.9, "category": "news", "summary": "OpenAI 的 API 有新进展。"}
+ANALYSIS = {"relevance_reason": "主题相符", "exclusion_status": "not_excluded", "exclusion_reason": "", "relevant": True, "relevance_score": 0.9, "category": "news", "summary": "OpenAI 的 API 有新进展。"}
 
 
 def digest_input(summary="PRIVATE_ITEM_SUMMARY"):
@@ -61,12 +61,12 @@ def test_trace_records_actual_http_request_and_full_response(trace_file, stage):
     raw_body = json.dumps(response_json, ensure_ascii=False, indent=2)
     def handler(request):
         sent.append(request)
-        assert request.extensions["timeout"]["read"] == (180 if stage == "digest" else 120)
+        assert request.extensions["timeout"]["read"] == 180
         return httpx.Response(200, text=raw_body)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         provider = OllamaProvider(client, "http://localhost:11434", "local-test")
         if stage == "digest":
-            provider.digest(digest_input("完整摘要" * 2000 + "END_OF_SUMMARY"))
+            provider.digest(digest_input("完整摘要" * 500 + "END_OF_SUMMARY"))
         else:
             provider.analyze(AnalysisInput(topic_name="OpenAI GPT", topic_description=None,
                                           title="API update", snippet="PRIVATE_RAW_SNIPPET", author=None, source="mock"))

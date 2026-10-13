@@ -25,7 +25,7 @@ class FakeAI:
 
     def analyze(self, data):
         self.analyses.append(data)
-        return AnalysisResult(relevant=self.relevant, relevance_score=0.8, category="news", summary="Item summary.")
+        return AnalysisResult(relevance_reason="主题判断理由", exclusion_status="not_excluded", exclusion_reason="", relevant=self.relevant, relevance_score=0.8 if self.relevant else 0.1, category="news", summary="条目事实摘要。")
 
     def digest(self, data):
         self.inputs.append(data)
@@ -37,9 +37,14 @@ class FakeAI:
 def add_item(session, index, relevant=True, analyzed=True):
     time = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=index)
     item = ItemRecord(topic_id=1, source="test", external_id=str(index), title=f"Item {index}",
-                      url="http://localhost/item", published_at=time, collected_at=time,
+                      url=f"http://localhost/item/{index}", published_at=time, collected_at=time,
                       ai_relevant=relevant, ai_analyzed_at=time if analyzed else None,
                       ai_summary="AI summary", snippet="RAW SHOULD NOT BE SENT")
+    from app.topics.policy import analysis_fingerprint
+    item.analysis_status = "valid" if relevant and analyzed else "invalid" if analyzed else "pending"
+    item.ai_relevance_score = .9 if relevant else .1
+    item.analysis_fingerprint = analysis_fingerprint(session.get(TopicRecord, 1)) if analyzed else None
+    item.exclusion_status = "not_excluded" if analyzed else None
     session.add(item)
     session.flush()
     return item
@@ -133,14 +138,15 @@ def test_ollama_digest_chinese_brief_from_english_items(engine):
         assert body["options"]["temperature"] == 0
         content = {"items": [json.loads(value) for value in re.findall(r"<ITEM>\n(.*?)\n</ITEM>", body["messages"][1]["content"], re.S)]}
         assert set(content["items"][0]) == {
+            "unit_id", "item_ids", "source_refs",
             "title", "source", "author", "published_at", "ai_category",
             "ai_relevance_score", "ai_summary",
         }
         assert content["items"][0]["ai_summary"] == "OpenAI announced an API update with reportedly faster responses."
         return httpx.Response(200, json={"message": {"content": json.dumps(result, ensure_ascii=False)}})
     with Session(engine) as session, httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        item = add_item(session, 1)
         session.get(TopicRecord, 1).name = "OpenAI API"
+        item = add_item(session, 1)
         item.title = "OpenAI API update"
         item.ai_summary = "OpenAI announced an API update with reportedly faster responses."
         item.ai_relevance_score = 0.9

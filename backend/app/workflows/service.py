@@ -13,6 +13,7 @@ from app.digests.schemas import DigestRead
 from app.digests.service import DigestService, NoRelevantItems
 from app.items.models import ItemRecord
 from app.topics.models import TopicRecord
+from app.topics.policy import pending_condition
 
 
 log = logging.getLogger("uvicorn.error")
@@ -29,6 +30,9 @@ class UpdateProgress(BaseModel):
     processed: int = 0
     relevant: int = 0
     irrelevant: int = 0
+    review: int = 0
+    queries: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     failed: int = 0
     pending_remaining: int = 0
     digest: DigestRead | None = None
@@ -43,19 +47,22 @@ class TopicUpdateService:
 
     def run(self, topic_id, stop=None):
         stop = stop or Event()
-        if self.session.get(TopicRecord, topic_id) is None:
+        topic = self.session.get(TopicRecord, topic_id)
+        if topic is None:
             raise LookupError("Topic not found")
         progress = UpdateProgress(topic_id=topic_id)
         try:
             yield progress.model_copy(deep=True)
             scan = CollectionService(self.session, self.source).scan(topic_id)
             progress.fetched, progress.created, progress.duplicates = scan.fetched, scan.created, scan.duplicates
+            progress.queries, progress.warnings = scan.queries, scan.warnings
             progress.completed_steps.append("scan")
             progress.stage = "analyze"
             yield progress.model_copy(deep=True)
             pending = list(self.session.scalars(select(ItemRecord.id).where(
-                ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), ItemRecord.ai_analyzed_at.is_(None)
+                ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), pending_condition(topic)
             ).order_by(ItemRecord.id).limit(20)))
+            analysis_unavailable = False
             for item_id in pending:
                 if stop.is_set():
                     break
@@ -63,21 +70,24 @@ class TopicUpdateService:
                     item = AnalysisService(self.session, self.provider).analyze(item_id)
                     progress.processed += 1
                     progress.relevant += int(item.ai_relevant)
-                    progress.irrelevant += int(not item.ai_relevant)
+                    progress.irrelevant += int(item.analysis_status == "invalid")
+                    progress.review += int(item.analysis_status == "review")
                 except AIError as error:
                     self.session.rollback()
                     log.warning("Topic %s Item %s analysis failed (%s)", topic_id, item_id, type(error).__name__)
                     progress.failed += 1
                     progress.error = str(error)
                     progress.failed_stage = "analyze"
-                    if error.status_code == 503:
-                        break  # Service unavailable: do not repeat the same failure 20 times.
+                    if error.status_code in (503, 504):
+                        analysis_unavailable = True
+                        break  # Service unavailable or timed out: do not repeat the same failure 20 times.
                 yield progress.model_copy(deep=True)
             progress.pending_remaining = self.session.scalar(select(func.count(ItemRecord.id)).where(
-                ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), ItemRecord.ai_analyzed_at.is_(None)))
+                ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), pending_condition(topic)))
             progress.completed_steps.append("analyze")
+            progress.stage = "digest"
             digest_service = DigestService(self.session, self.provider)
-            if digest_service.needs_generation(topic_id) and not stop.is_set():
+            if not analysis_unavailable and not stop.is_set() and digest_service.needs_generation(topic_id):
                 progress.stage = "digest"
                 yield progress.model_copy(deep=True)
                 try:
@@ -86,7 +96,7 @@ class TopicUpdateService:
                 except NoRelevantItems:
                     progress.digest_skipped = "no_eligible_summaries"
             else:
-                progress.digest_skipped = "stopped" if stop.is_set() else "no_new_relevant"
+                progress.digest_skipped = "analysis_unavailable" if analysis_unavailable else "stopped" if stop.is_set() else "no_new_relevant"
             progress.stage = "complete"
             progress.status = "partial" if progress.failed or progress.pending_remaining or stop.is_set() else "completed"
         except (SourceError, AIError) as error:

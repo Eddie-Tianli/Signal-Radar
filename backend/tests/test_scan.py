@@ -31,7 +31,7 @@ def scan_client(tmp_path):
     state = {"key": "test-key", "status": 200, "items": [video("one"), video("two")], "requests": []}
     def handler(request):
         state["requests"].append(request)
-        return httpx.Response(state["status"], json={"items": state["items"]})
+        return httpx.Response(state["status"], json={"items": [] if request.url.path.endswith("/videos") else state["items"]})
     with httpx.Client(transport=httpx.MockTransport(handler)) as upstream:
         app.dependency_overrides[get_session] = sessions
         app.dependency_overrides[get_source] = lambda: YouTubeSource(upstream, state["key"])
@@ -44,6 +44,10 @@ def scan_client(tmp_path):
             engine.dispose()
 
 
+def counts(data):
+    return {key: data[key] for key in ("topic_id", "source", "fetched", "created", "duplicates")}
+
+
 def test_scan_create_repeat_counts_and_items(scan_client):
     client, state = scan_client
     topic = client.post("/api/topics", json={"name": "Nolan"}).json()
@@ -51,10 +55,10 @@ def test_scan_create_repeat_counts_and_items(scan_client):
     assert client.get(url + "/items").json() == []
     first = client.post(url + "/scan")
     assert first.status_code == 200
-    assert first.json() == {"topic_id": topic["id"], "source": "youtube", "fetched": 2, "created": 2, "duplicates": 0}
+    assert counts(first.json()) == {"topic_id": topic["id"], "source": "youtube", "fetched": 2, "created": 2, "duplicates": 0}
     assert state["requests"][0].url.params["q"] == "Nolan"
     second = client.post(url + "/scan")
-    assert second.json() == {"topic_id": topic["id"], "source": "youtube", "fetched": 2, "created": 0, "duplicates": 2}
+    assert counts(second.json()) == {"topic_id": topic["id"], "source": "youtube", "fetched": 2, "created": 0, "duplicates": 2}
     items = client.get(url + "/items").json()
     assert len(items) == 2
     assert items[0]["id"] > items[1]["id"]
@@ -89,7 +93,7 @@ def test_duplicate_in_response_and_across_topics(scan_client):
     state["items"] = [video("one"), video("one"), video("two")]
     first = client.post("/api/topics", json={"name": "First"}).json()["id"]
     second = client.post("/api/topics", json={"name": "Second"}).json()["id"]
-    assert client.post(f"/api/topics/{first}/scan").json() == {
+    assert counts(client.post(f"/api/topics/{first}/scan").json()) == {
         "topic_id": first, "source": "youtube", "fetched": 3, "created": 2, "duplicates": 1,
     }
     assert client.post(f"/api/topics/{second}/scan").json()["duplicates"] == 3

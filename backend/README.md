@@ -85,6 +85,9 @@ $testTempPath = Join-Path $testTempRoot ([guid]::NewGuid().ToString('N'))
 python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
 ```
 
-当前 head 为 0005（Item / Digest 回收站）。后续模型变更需生成并审阅 migration，再执行 upgrade head。不要在需要保留数据的数据库上降级：0001 删除 topics，0002 删除 items，0003 删除 AI 结果，0004 删除 Digest 历史，0005 会移除回收站标记并让未永久删除的内容重新可见。
+当前 head 为 0006（自然语言规则与分析流水线，保留 Item / Digest 回收站）。后续模型变更需生成并审阅 migration，再执行 upgrade head。不要在需要保留数据的数据库上降级：0001 删除 topics，0002 删除 items，0003 删除 AI 结果，0004 删除 Digest 历史，0005 会移除回收站标记并让未永久删除的内容重新可见。
 
 本地启动、Ollama、Scheduler 和通知操作见 [本地开发指南](../docs/development/local-development.md)。
+
+
+v0.2.0 增量迁移 `0006_intent_pipeline.py` 保留旧表、Raw Item 和 AI 结果；升级前先做本机 pg_dump 备份。旧分析需在当前规则下重新确认，旧 Digest 的 sources 为 null 仍可读取。详细规则、阈值、热度算法及验收见根 README 和 docs/development/v0.2.0-implementation.md。
