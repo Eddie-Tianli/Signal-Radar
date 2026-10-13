@@ -14,3 +14,5 @@ class DigestRecord(Base):
     item_count: Mapped[int] = mapped_column(Integer)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     topic: Mapped[TopicRecord] = relationship(back_populates="digests")
+
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

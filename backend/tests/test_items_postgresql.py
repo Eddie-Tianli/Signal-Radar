@@ -130,3 +130,37 @@ def test_postgresql_mock_scan():
                 assert digest.item_count == 1 and digest.generated_at.utcoffset() is not None
         finally:
             transaction.rollback()
+
+
+@pytest.mark.skipif(os.getenv("RUN_POSTGRES_TESTS") != "1", reason="Opt-in local PostgreSQL check")
+@pytest.mark.parametrize("kind", ["items", "digests"])
+def test_postgresql_recycle_bin_roundtrip(kind):
+    from app.digests.models import DigestRecord
+    from app.trash.router import move_to_trash, restore, permanently_delete, contents
+    with get_engine().connect() as connection:
+        transaction = connection.begin()
+        try:
+            with Session(connection, join_transaction_mode="create_savepoint") as session:
+                topic = TopicRecord(name=f"Recycle bin integration {uuid4()}")
+                session.add(topic)
+                session.flush()
+                record = (ItemRecord(topic_id=topic.id, source="test", external_id=str(uuid4()),
+                                     title="Original", url="https://example.com", ai_summary="AI preserved")
+                          if kind == "items" else DigestRecord(topic_id=topic.id, title="Saved brief", summary="Saved summary", item_count=1))
+                session.add(record)
+                session.commit()
+                record_id = record.id
+                assert move_to_trash(kind, record_id, session).status_code == 204
+                session.refresh(record)
+                assert record.deleted_at.utcoffset() is not None
+                assert any(row.id == record_id for row in contents(session)[kind])
+                assert restore(kind, record_id, session).status_code == 204
+                session.refresh(record)
+                assert record.deleted_at is None
+                if kind == "items":
+                    assert record.ai_summary == "AI preserved"
+                move_to_trash(kind, record_id, session)
+                assert permanently_delete(kind, record_id, session).status_code == 204
+                assert session.get(type(record), record_id) is None
+        finally:
+            transaction.rollback()

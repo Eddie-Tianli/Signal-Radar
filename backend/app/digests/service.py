@@ -24,7 +24,7 @@ class DigestService:
 
     def eligible(self, topic_id):
         return select(ItemRecord).where(
-            ItemRecord.topic_id == topic_id, ItemRecord.ai_analyzed_at.is_not(None),
+            ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), ItemRecord.ai_analyzed_at.is_not(None),
             ItemRecord.ai_relevant.is_(True), ItemRecord.ai_summary.is_not(None),
             func.length(func.trim(ItemRecord.ai_summary, " \t\r\n\v\f\u3000\u00a0")) > 0
         )
@@ -61,5 +61,5 @@ class DigestService:
         if self.session.get(TopicRecord, topic_id) is None:
             raise LookupError("Topic not found")
         return [DigestRead.model_validate(row) for row in self.session.scalars(
-            select(DigestRecord).where(DigestRecord.topic_id == topic_id)
+            select(DigestRecord).where(DigestRecord.topic_id == topic_id, DigestRecord.deleted_at.is_(None))
             .order_by(DigestRecord.generated_at.desc(), DigestRecord.id.desc()))]

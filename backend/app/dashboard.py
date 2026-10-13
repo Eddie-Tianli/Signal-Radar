@@ -1,7 +1,7 @@
 """Read-only overview using existing tables; no persisted statistics."""
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_session
@@ -20,13 +20,13 @@ def dashboard(session: Annotated[Session, Depends(get_session)]):
             func.count(TopicRecord.id).filter(TopicRecord.enabled.is_(True)))).one()
         items = session.execute(select(func.count(ItemRecord.id),
             func.count(ItemRecord.id).filter(ItemRecord.ai_analyzed_at.is_not(None), ItemRecord.ai_relevant.is_(True)),
-            func.count(ItemRecord.id).filter(ItemRecord.ai_analyzed_at.is_(None)))).one()
-        recent = session.execute(select(ItemRecord, TopicRecord.name).join(TopicRecord)
+            func.count(ItemRecord.id).filter(ItemRecord.ai_analyzed_at.is_(None))).where(ItemRecord.deleted_at.is_(None))).one()
+        recent = session.execute(select(ItemRecord, TopicRecord.name).join(TopicRecord).where(ItemRecord.deleted_at.is_(None))
             .order_by(ItemRecord.collected_at.desc(), ItemRecord.id.desc()).limit(5)).all()
-        briefs = session.execute(select(DigestRecord, TopicRecord.name).join(TopicRecord)
+        briefs = session.execute(select(DigestRecord, TopicRecord.name).join(TopicRecord).where(DigestRecord.deleted_at.is_(None))
             .order_by(DigestRecord.generated_at.desc(), DigestRecord.id.desc()).limit(5)).all()
         topic_summaries = session.execute(select(TopicRecord.id, TopicRecord.name, TopicRecord.enabled,
-            func.count(ItemRecord.id), func.max(ItemRecord.collected_at)).outerjoin(ItemRecord)
+            func.count(ItemRecord.id), func.max(ItemRecord.collected_at)).outerjoin(ItemRecord, and_(ItemRecord.topic_id == TopicRecord.id, ItemRecord.deleted_at.is_(None)))
             .group_by(TopicRecord.id, TopicRecord.name, TopicRecord.enabled).order_by(TopicRecord.id)).all()
         return {"topics": [{"id": row[0], "name": row[1], "enabled": row[2], "item_count": row[3], "last_collected_at": row[4]} for row in topic_summaries],
                 "analyzed_items": items[0] - items[2], "total_topics": topics[0], "enabled_topics": topics[1], "total_items": items[0],

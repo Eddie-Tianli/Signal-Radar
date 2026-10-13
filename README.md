@@ -31,7 +31,7 @@ Topic → SourceAdapter → Item → AIProvider / Ollama → Relevant Items → 
 ```
 
 Scheduler 调用同一组服务，通知在自动简报保存成功后发送。
-项目使用 monorepo：`frontend/`、`backend/`、`docs/`。当前 migration head 为 **0004**，项目版本为 **0.1.1**。
+项目使用 monorepo：`frontend/`、`backend/`、`docs/`。当前 migration head 为 **0005**，项目版本为 **0.1.1**。
 
 ## 本地安装与启动
 
@@ -142,3 +142,14 @@ npm run build
 - 本地流程稳定后再评估更高级的内容组织方式。
 
 本次没有开发 v0.2.0 功能。v0.1.1 验收详情见 [本轮验收记录](docs/development/v0.1.1-acceptance.md)。
+
+
+## 删除与回收站
+
+采集内容卡片、主题简报和简报阅读页均可将单条内容移入回收站；从侧边导航进入“回收站”可预览、恢复或永久删除。Item 的原始信息和 AI 分析一起保留和恢复，简报保留完整文本。回收站不自动清理。
+
+回收站内容不参与首页统计、AI 分析和简报输入。软删除 Item 仍占用 `(source, external_id)`，再次扫描不会自动恢复；永久删除后可能重新采集。已有 Digest 是独立快照，删除 Item 不会改写它。软删除的 Digest 仍用于自动生成的时间水位，避免无变化时自动重新生成；永久删除最新 Digest 后，自动流程可能再次生成简报。
+
+**删除整个 Topic 仍是不可恢复的级联删除，包括该 Topic 的回收站内容。**
+
+升级本次版本前停止 SignalRadar，在 `backend/` 激活虚拟环境并执行 `python -m alembic upgrade head`；最新 head 为 `0005`，再执行 `python -m alembic current` 和 `python -m alembic check`。升级只增加 nullable 字段与索引，不删除已有内容。

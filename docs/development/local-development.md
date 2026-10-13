@@ -13,7 +13,7 @@
 .\start-signalradar.ps1
 ```
 
-脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration 0004、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
+脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration 0005、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
 
 Ollama 离线会记录 `Ollama unavailable - AI analysis will fail until Ollama is started.`，应用仍能启动。数据库或必需文件缺失则阻止启动并提示处理方式。访问 http://localhost:3000 和 http://127.0.0.1:8000/api/status。后者保留 name/version/status，增加 database、ollama、scheduler、notifications；available 只表示 Ollama API 响应，不保证 OLLAMA_MODEL 已配置和安装。
 
@@ -53,7 +53,7 @@ MockSource 不创建 HTTP 客户端；前端只请求本地后端，后端连接
 1. 启动 Ollama；尚未运行时可执行 `ollama serve`。
 2. 使用 `ollama list` 获取已安装模型的完整名称；用 `Invoke-RestMethod http://localhost:11434/api/tags` 检查服务。
 3. 设置 OLLAMA_BASE_URL=http://localhost:11434、OLLAMA_MODEL 为实际模型名称，USE_MOCK_SOURCE=true。不会自动下载模型；修改后重启。
-4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0004 head）。
+4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0005 head）。
 5. 创建 Topic 并扫描，在内容卡片点击“分析”，或“分析未处理内容”。先少量测试，本地模型可能较慢，单次后端调用超时为 120 秒。
 6. 查看相关性、评分、分类、AI 摘要和分析时间；刷新后仍应存在。
 
@@ -126,7 +126,7 @@ $attemptEvents | Where-Object { $_.event -match 'error|failed|retry' } | Convert
 ## Digest 与自动任务
 
 1. 设置 USE_MOCK_SOURCE=true、SCHEDULER_ENABLED=false，启动已配置模型的 Ollama。
-2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0004 head。
+2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0005 head。
 3. 启动前后端，创建 Topic，点击“扫描”和“分析”。
 4. 至少一条内容需被判断为相关，否则“生成简报”返回 409；全部不相关也可能是正常模型判断。
 5. 点击“生成简报”，检查 AI 标记、标题、引用数、时间和摘要；“查看历史简报”读取保存的快照。
@@ -254,3 +254,21 @@ npm run build
 10. 最后单独启用 Scheduler，验证其与手动操作同 Topic 不重叠；结束后可关闭配置。
 
 本轮实际验收结果及尚未完成的项目见 [v0.1.1 验收记录](v0.1.1-acceptance.md)。不要将隔离 SQLite 验收描述为 PostgreSQL 验收，也不要将静态 HTTP 检查描述为浏览器视觉验收。
+
+
+## 回收站验证
+
+先停止旧后端并执行 `python -m alembic upgrade head`，确认 `alembic current` 为 `0005 (head)` 且 `alembic check` 无差异，然后启动应用。
+
+1. 使用 MockSource 采集并分析，生成一条简报。
+2. 对 Item 点击“移入回收站”，确认默认列表和首页计数减少；再次扫描不重新出现。
+3. 进入 `/trash`，展开查看原文和 AI 摘要，点击“恢复”；刷新 Topic 确认 ID、分析和时间保持。
+4. 对主题简报或 `/digests` 中的简报移入回收站，确认历史列表隐藏；恢复后可再次阅读完整正文。
+5. 关闭并重新启动后端，确认回收站与已恢复记录均保持。
+6. 再移入回收站，点击“永久删除”：取消确认不应删除，确认后无法恢复。永久删除 Item 后重新扫描可能再次采集。
+7. Scheduler 或手动更新正在运行时，删除、恢复、永久删除应返回主题忙碌提示。回收站内容不参与自动分析或简报。
+
+回收站不自动清空。Topic 删除仍永久级联删除其回收站内容，界面已明确提示。测试目录继续使用 `D:\pytest-temp` 下的新 GUID，并传入 `-p no:cacheprovider --basetemp`。
+
+
+本次回收站验证结果：后端完整测试（含真实 PostgreSQL 集成测试）191 passed；前端 API 测试 8 passed；lint / build 通过；本机 PostgreSQL 已升级至 0005 (head)，Alembic check 无差异。测试不调用真实 AI / YouTube、不弹出 Windows 通知，PostgreSQL 测试新增数据通过外层事务回滚。旧运行进程尚未加载新增 API / 路由，需要重启 SignalRadar 后再进行上述浏览器交互验收。

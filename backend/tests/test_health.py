@@ -26,7 +26,7 @@ def test_ollama_offline_does_not_block_preflight(monkeypatch):
     monkeypatch.setattr(local_runtime, "dependency_status", lambda: {"database": "connected", "ollama": "unavailable"})
     class Connection:
         def scalar(self, statement):
-            return "0004"
+            return "0005"
     class Engine:
         @contextmanager
         def connect(self):

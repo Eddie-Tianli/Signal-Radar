@@ -2,7 +2,7 @@
 
 ## 已实现存储
 
-PostgreSQL 通过 SQLAlchemy 保存 Topic、Item 和 Digest。Alembic `0001` 创建 topics，`0002_create_items.py` 创建 items，`0003_item_ai_analysis.py` 增加 nullable AI 字段，`0004_create_digests.py` 增加简报历史。当前 head 为 `0004`，已应用 migration 保持不变。
+PostgreSQL 通过 SQLAlchemy 保存 Topic、Item 和 Digest。Alembic `0001` 创建 topics，`0002_create_items.py` 创建 items，`0003_item_ai_analysis.py` 增加 nullable AI 字段，`0004_create_digests.py` 增加简报历史。`0005_content_recycle_bin.py` 为 items 和 digests 增加 deleted_at 与索引。当前 head 为 `0005`，已应用 migration 保持不变。
 
 ## topics
 
@@ -81,3 +81,12 @@ python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
 ```
 
 离线测试使用隔离 SQLite 文件，Item 测试启用 foreign key，覆盖 0001 → 0002 升级、降级及 Topic 保留。可选 PostgreSQL 测试验证真实约束及时区行为，不访问互联网。降级 0002 会删除 Item，不要在需要保留数据的数据库上执行。
+
+
+## 回收站（0005）
+
+`items.deleted_at` 和 `digests.deleted_at` 为 nullable `timestamp with time zone`，分别建立 `ix_items_deleted_at` 和 `ix_digests_deleted_at`。null 表示正常记录，非 null 表示软删除 UTC 时间。已有数据保持 null；恢复只清除此标记，保留原 ID、原文、分析结果及时间。
+
+不新增回收站表，不改变 Item 的全局唯一约束。回收站内容不进入默认列表、Dashboard 统计、AI 分析、Digest 输入或自动更新待处理列表。软删除 Digest 仍作为自动生成的时间水位，防止删除简报导致无变化重建。永久删除只允许已软删除行；永久删除 Item 后可被再次采集，永久删除 Digest 后不再保留其时间水位。
+
+Digest 是独立快照，Item 删除不修改历史 Digest。Topic 的 ON DELETE CASCADE 仍会永久删除全部子记录，包括回收站内容。降级 0005 会丢失删除标记，让尚未永久删除的内容重新可见；不要在日常使用中降级。

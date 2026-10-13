@@ -98,3 +98,20 @@ HTTP 200 只表示进度流已开始，不代表全部阶段成功，客户端�
 GET /api/dashboard 保留原字段，新增 analyzed_items 以及 topics（id、name、enabled、item_count、last_collected_at），用于真实数量及最近采集时间展示。未新增数据库表。
 
 Digest 的 Ollama 调用超时每次 180 秒，空 content 返回明确错误；最多一次重试，不改变 DigestResult Schema。
+
+
+## 内容删除与回收站
+
+| Endpoint | 行为 |
+| --- | --- |
+| `DELETE /api/items/{id}` | Item 连同 AI 分析移入回收站，204；重复软删除保持幂等 |
+| `DELETE /api/digests/{id}` | 简报移入回收站，204 |
+| `GET /api/trash` | 返回 `{ "items": [...], "digests": [...] }`，各记录含原字段与 `deleted_at`，按删除时间倒序 |
+| `POST /api/trash/items/{id}/restore` | 恢复 Item，204 |
+| `POST /api/trash/digests/{id}/restore` | 恢复简报，204 |
+| `DELETE /api/trash/items/{id}` | 永久删除已进入回收站的 Item，204 |
+| `DELETE /api/trash/digests/{id}` | 永久删除已进入回收站的简报，204 |
+
+不存在或已永久删除返回 404；永久删除正常记录返回 409；同 Topic 操作进行中返回 409。数据库错误沿用安全的 503。原有读取响应字段保持不变，但不再包含回收站记录；分析软删除 Item 返回 404。恢复不调用 AI 或外部信息源。永久删除不可恢复，前端二次确认。
+
+软删除 Item 仍参与采集去重；永久删除后可再次采集。简报是文本快照，不随 Item 删除变化。软删除简报仍用于自动生成时间水位；永久删除该简报后水位不再保留。Topic 删除仍永久级联删除其所有内容和回收站记录。

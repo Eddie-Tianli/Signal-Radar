@@ -36,7 +36,7 @@ Service = Annotated[AnalysisService, Depends(get_analysis_service)]
 @router.post("/items/{item_id}/analyze", response_model=Item)
 def analyze_item(item_id: int, service: Service):
     item = service.session.get(ItemRecord, item_id)
-    if item is None:
+    if item is None or item.deleted_at is not None:
         raise HTTPException(404, "Item not found")
     with topic_operation(item.topic_id):
         return service.analyze(item_id)

@@ -37,3 +37,5 @@ class ItemRecord(Base):
     ai_category: Mapped[str | None] = mapped_column(String(50))
     ai_summary: Mapped[str | None] = mapped_column(Text)
     ai_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

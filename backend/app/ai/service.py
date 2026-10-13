@@ -16,7 +16,7 @@ class AnalysisService:
 
     def analyze(self, item_id: int) -> Item:
         item = self.session.get(ItemRecord, item_id)
-        if item is None:
+        if item is None or item.deleted_at is not None:
             raise LookupError("Item not found")
         topic = item.topic
         # Bound one model request without changing or deleting the stored source content.
@@ -38,7 +38,7 @@ class AnalysisService:
         if self.session.get(TopicRecord, topic_id) is None:
             raise LookupError("Topic not found")
         ids = list(self.session.scalars(select(ItemRecord.id).where(
-            ItemRecord.topic_id == topic_id, ItemRecord.ai_analyzed_at.is_(None)
+            ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), ItemRecord.ai_analyzed_at.is_(None)
         ).order_by(ItemRecord.id).limit(limit)))
         result = BatchResult(topic_id=topic_id)
         for item_id in ids:

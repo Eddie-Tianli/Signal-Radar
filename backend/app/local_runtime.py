@@ -28,7 +28,7 @@ def preflight():
     try:
         with get_engine().connect() as connection:
             revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if revision != "0004":
+        if revision != "0005":
             raise ValueError
     except Exception:
         logging.error("Database migrations missing or outdated. Run python -m alembic upgrade head from backend/.")

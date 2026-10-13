@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const links = [["/", "总览", "◫"], ["/topics", "我的主题", "◎"], ["/digests", "情报简报", "▤"]];
+const links = [["/", "总览", "◫"], ["/topics", "我的主题", "◎"], ["/digests", "情报简报", "▤"], ["/trash", "回收站", "♲"]];
 export default function Navigation() {
   const path = usePathname();
   return <aside className="border-b border-line bg-surface lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:flex lg:w-56 lg:flex-col lg:border-b-0 lg:border-r">

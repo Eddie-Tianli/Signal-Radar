@@ -54,7 +54,7 @@ class TopicUpdateService:
             progress.stage = "analyze"
             yield progress.model_copy(deep=True)
             pending = list(self.session.scalars(select(ItemRecord.id).where(
-                ItemRecord.topic_id == topic_id, ItemRecord.ai_analyzed_at.is_(None)
+                ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), ItemRecord.ai_analyzed_at.is_(None)
             ).order_by(ItemRecord.id).limit(20)))
             for item_id in pending:
                 if stop.is_set():
@@ -74,7 +74,7 @@ class TopicUpdateService:
                         break  # Service unavailable: do not repeat the same failure 20 times.
                 yield progress.model_copy(deep=True)
             progress.pending_remaining = self.session.scalar(select(func.count(ItemRecord.id)).where(
-                ItemRecord.topic_id == topic_id, ItemRecord.ai_analyzed_at.is_(None)))
+                ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), ItemRecord.ai_analyzed_at.is_(None)))
             progress.completed_steps.append("analyze")
             digest_service = DigestService(self.session, self.provider)
             if digest_service.needs_generation(topic_id) and not stop.is_set():

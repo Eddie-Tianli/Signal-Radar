@@ -46,7 +46,7 @@ export default function TopicsPage() {
     } finally { saving.current = false; setBusy(false); }
   }
   async function remove(topic: Topic) {
-    if (saving.current || !window.confirm(`确定删除“${topic.name}”吗？其内容和历史简报也会删除。`)) return;
+    if (saving.current || !window.confirm(`确定删除“${topic.name}”吗？此操作会永久删除该主题及其内容、历史简报和回收站内容，无法恢复。`)) return;
     saving.current = true; setBusy(true); setNotice(null); setError(null);
     try { await deleteTopic(topic.id); setTopics(current => current.filter(item => item.id !== topic.id)); if (editing?.id === topic.id) { setEditing(null); setShowForm(false); } setNotice("主题已删除。"); refreshStats(); }
     catch (error) { setError(error instanceof Error ? error.message : "删除未完成。"); }

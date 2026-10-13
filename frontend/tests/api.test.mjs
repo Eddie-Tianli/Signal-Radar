@@ -58,3 +58,29 @@ test("offline backend does not leak network details", async () => {
   const service = api(async () => { throw new Error("SECRET network detail"); });
   await assert.rejects(service.listTopics(), error => error.message.includes("后端无法连接") && !error.message.includes("SECRET"));
 });
+
+
+test("content deletion, trash restore and purge use distinct endpoints", async () => {
+  const calls = [];
+  const service = api(async (url, options) => {
+    calls.push([url, options.method || "GET"]);
+    return url.endsWith("/trash") ? new Response(JSON.stringify({ items: [], digests: [] })) : new Response(null, { status: 204 });
+  });
+  await service.moveToTrash("items", 12);
+  await service.moveToTrash("digests", 13);
+  assert.equal(JSON.stringify(await service.readTrash(signal())), '{"items":[],"digests":[]}');
+  await service.restoreContent("items", 12);
+  await service.permanentlyDelete("digests", 13);
+  assert.deepEqual(calls, [
+    ["http://127.0.0.1:8000/api/items/12", "DELETE"],
+    ["http://127.0.0.1:8000/api/digests/13", "DELETE"],
+    ["http://127.0.0.1:8000/api/trash", "GET"],
+    ["http://127.0.0.1:8000/api/trash/items/12/restore", "POST"],
+    ["http://127.0.0.1:8000/api/trash/digests/13", "DELETE"],
+  ]);
+});
+
+test("missing deleted content gives a clear message", async () => {
+  const service = api(async () => new Response(JSON.stringify({ detail: "内容不存在或已被永久删除。" }), { status: 404 }));
+  await assert.rejects(service.moveToTrash("items", 12), /内容不存在或已被永久删除/);
+});

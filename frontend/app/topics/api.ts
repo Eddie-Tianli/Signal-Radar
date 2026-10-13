@@ -9,6 +9,8 @@ export type TopicInput = Omit<Topic, "id">;
 
 // 只转换展示文案，不改变后端响应、HTTP 状态或请求参数。
 const errorMessages: Record<string, string> = {
+  "内容不存在或已被永久删除。": "内容不存在或已被永久删除。",
+  "请先将内容移入回收站，再执行永久删除。": "请先将内容移入回收站，再执行永久删除。",
   "Topic operation already running. Wait and refresh.": "该主题正在处理，请稍后刷新，不要重复提交。",
   "Ollama returned empty content. Check model output budget or try again.": "Ollama 未返回简报正文，可能耗尽了推理输出预算。请重试，并查看 Ollama Trace。",
   "Ollama Digest timed out. Try again later.": "简报生成超时，请稍后重试。已完成的分析仍已保存。",
@@ -62,7 +64,7 @@ async function request(path = "", options: RequestInit = {}, timeoutMs = 5000, b
       const body = await response.json().catch(() => null);
       throw new Error(apiErrorMessage(body?.detail));
     }
-    if (path.endsWith("/scan") || path.endsWith("/items") || path.includes("/analyze") || path.includes("/digest")) {
+    if (base === "http://127.0.0.1:8000/api" || path.endsWith("/scan") || path.endsWith("/items") || path.includes("/analyze") || path.includes("/digest")) {
       const body = await response.json().catch(() => null);
       throw new Error((typeof body?.detail === "string" ? errorMessages[body.detail] : undefined) ?? `请求失败（HTTP ${response.status}），请检查服务状态后重试。`);
     }
@@ -194,4 +196,24 @@ export async function readDashboard(signal?: AbortSignal): Promise<DashboardData
 }
 export async function readStatus(signal?: AbortSignal): Promise<RuntimeStatus> {
   return (await request("/status", { signal }, 12000, "http://127.0.0.1:8000/api")).json();
+}
+
+
+export type ContentKind = "items" | "digests";
+export type TrashContents = {
+  items: (CollectedItem & { deleted_at: string })[];
+  digests: (Digest & { deleted_at: string })[];
+};
+const contentBase = "http://127.0.0.1:8000/api";
+export async function moveToTrash(kind: ContentKind, id: number) {
+  await request(`/${kind}/${id}`, { method: "DELETE" }, 12000, contentBase);
+}
+export async function readTrash(signal?: AbortSignal): Promise<TrashContents> {
+  return (await request("/trash", { signal }, 12000, contentBase)).json();
+}
+export async function restoreContent(kind: ContentKind, id: number) {
+  await request(`/trash/${kind}/${id}/restore`, { method: "POST" }, 12000, contentBase);
+}
+export async function permanentlyDelete(kind: ContentKind, id: number) {
+  await request(`/trash/${kind}/${id}`, { method: "DELETE" }, 12000, contentBase);
 }

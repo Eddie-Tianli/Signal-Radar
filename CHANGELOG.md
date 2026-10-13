@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- 采集 Item（连同 AI 分析）与 Digest 支持移入回收站、恢复和永久删除；新增回收站页面与 API。
+- Alembic `0005_content_recycle_bin.py` 增加 nullable `deleted_at` 和索引，保留已有数据。
+
+### Changed
+
+- 默认列表、Dashboard、AI 分析及 Digest 输入排除回收站内容；软删除 Item 保留来源唯一约束，避免重新扫描后自动出现。
+- 永久删除仅允许操作回收站内容，前端二次确认；删除整个 Topic 的确认明确提示其回收站内容也会永久删除。
+
 ## [0.1.1] - 2026-10-13
 
 本地候选版本，待 PostgreSQL 和浏览器人工验收；未创建 Git tag 或发布。

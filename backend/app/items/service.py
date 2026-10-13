@@ -27,7 +27,7 @@ class ItemService:
 
     def list_topic_items(self, topic_id: int) -> list[Item]:
         records = self.session.scalars(
-            select(ItemRecord).where(ItemRecord.topic_id == topic_id).order_by(ItemRecord.id)
+            select(ItemRecord).where(ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None)).order_by(ItemRecord.id)
         ).all()
         return [Item.model_validate(record) for record in records]
 
@@ -45,6 +45,6 @@ class ItemService:
 
     def list_recent_topic_items(self, topic_id: int) -> list[Item]:
         records = self.session.scalars(select(ItemRecord).where(
-            ItemRecord.topic_id == topic_id
+            ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None)
         ).order_by(ItemRecord.collected_at.desc(), ItemRecord.id.desc())).all()
         return [Item.model_validate(record) for record in records]

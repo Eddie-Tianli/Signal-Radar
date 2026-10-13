@@ -14,6 +14,7 @@ from app.dashboard import router as dashboard_router
 from app.notifications.service import notifications_enabled
 from app.workflows.router import router as updates_router
 from app.workflows.locks import TopicBusy
+from app.trash.router import router as trash_router
 
 
 app = FastAPI(title="SignalRadar API", version="0.1.1", lifespan=lifespan)
@@ -29,6 +30,7 @@ app.include_router(ai_router)
 app.include_router(digests_router)
 app.include_router(dashboard_router)
 app.include_router(updates_router)
+app.include_router(trash_router)
 
 
 @app.exception_handler(TopicBusy)
