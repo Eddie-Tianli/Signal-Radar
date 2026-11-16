@@ -97,3 +97,17 @@ test("Topic intent configuration preserves rule IDs and threshold in HTTP body",
   });
   assert.equal((await service.saveTopic(input, 7)).relevance_threshold, .85);
 });
+
+
+test("normalization read, reuse and explicit regeneration have distinct requests", async () => {
+  const calls=[];
+  const service=api(async (url,options) => { calls.push([url,options.method]); return new Response(JSON.stringify({ id: 1, normalization_status: "completed" })); });
+  await service.getItemNormalization(5);
+  await service.normalizeItem(5);
+  await service.normalizeItem(5,true);
+  assert.deepEqual(calls,[
+    ["http://127.0.0.1:8000/api/items/5/normalization",undefined],
+    ["http://127.0.0.1:8000/api/items/5/normalize","POST"],
+    ["http://127.0.0.1:8000/api/items/5/normalize?force=true","POST"],
+  ]);
+});

@@ -123,3 +123,16 @@ topics 增加 analysis_state / analysis_counts / last_analysis_at / last_queries
 
 
 当前模型调用参数：temperature=0、stream=false、num_ctx=24576；单条 Analyze 输出预算 8192 / HTTP 180 秒，无自动重试。Digest 预算 4096 / 8192、最多一次重试、各 180 秒。超长输入或输出校验失败有明确错误；JSON schema 仍由 format 传递，未改变 DigestResult 的 title / summary contract。
+
+
+## Task A：单条信息规范化（独立 API，兼容既有接口）
+
+- `GET /api/items/{item_id}/normalization`：返回当前输入/schema 最新修订；尚未处理返回 HTTP 200 + null，Item 不存在或在回收站返回404。读取不需要 Ollama。
+- `POST /api/items/{item_id}/normalize`：复用已有成功结果，否则逐条调用 Provider；`?force=true` 显式重新生成并留存旧成功修订。
+- `POST /api/topics/{topic_id}/normalize?limit=3`：顺序处理尚未完成的 Item，limit 1–10，默认3；已完成不调用模型，失败/中断可重试。返回 `{topic_id,processed,failed,reused}`；Ollama 不可用/超时停止后续调用。reused 为遍历到的已有成功条数，不表示整个 Topic 总量。
+
+单条返回 id、item_id、schema_version、revision、input_fingerprint、normalization_status、headline、summary、entities、event_type、event_date、keywords、claims、warnings、source_reference、content_coverage、text_truncated、source_metadata、matching_text、model_name、normalized_at、error。claims.status 仅 reported/unconfirmed/conflicting/unknown；source_reference 由服务写入，不允许模型伪造来源。
+
+状态：未处理 GET null；处理中 processing；完成 completed；失败 failed/error。模型输出字段缺失、类型错误、事实/语言检查失败返回安全502；服务不可用503；超时504；Topic 忙409；参数错误422。单条失败后 GET 可检查持久化状态。批量部分失败返回计数，不伪造成功。
+
+同一单条输出 schema：`{headline,summary,entities,event_type,event_date,keywords,claims:[{text,status}],warnings}`。headline/summary 中文，summary 一般100–250字，信息不足可缩短，schema 上限1000字符防过长。event_date ISO YYYY-MM-DD 或null。示例与实际 Prompt 见 Task A 记录。没有改动既有 Analyze / Scan / Digest response contract。

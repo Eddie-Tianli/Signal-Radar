@@ -116,3 +116,28 @@ Ollama num_ctx=24576，实际 system+user UTF-8 输入最多 15000 bytes，预�
 `OLLAMA_NO_THINK_HINT` 默认 false，可选在 system 前加 `/no_think`；这是兼容提示，不保证关闭 thinking，不影响同一结构化校验或最多一次 retry。当前本机模型标签与实际 family 不同，验收记录保留了真实观察。失败重分析保留上次成功的 analysis_fingerprint / summary，状态为 failed，API 同时可显示过期；不会把历史摘要当成当前规则的有效结果。
 
 标题相似但摘要只差一个实体也可能是不同事件，因此非同 URL 合并要求规范化摘要完全一致，容忍的标题变化非常有限。这会漏合并，优先保证来源与事件不被错误混合。语言、来源引用及年份校验为启发式防护，不是完整事实验证或 prompt injection 的形式化保证。
+
+
+## Task A：独立信息规范化层（已实现）
+
+```text
+SourceAdapter → Raw Item → PostgreSQL
+                      ↓（手动单条 / 有界批量）
+                TextPreprocessor
+                      ↓
+             NormalizationService → AIProvider.normalize
+                      ↓                ↓
+              ItemNormalization ← OllamaProvider
+                      ↓
+            PostgreSQL → Item 卡片简讯
+```
+
+既有 `items.schemas.NormalizedItem` 是 Source 输出 schema，表示平台字段标准化；新 `ItemNormalizationRecord` 是 AI 规范化结果，避免同名误解。输入不含 Topic / include / exclude / score，结果按 item_id 存储，可被后续不同 Topic 匹配复用；当前 Item 仍只有一个 Topic 外键，本任务未实现多 Topic 关联。
+
+TextPreprocessor 用标准库 HTMLParser 处理标记、entities、Unicode NFKC、空白和纯排版分隔线，仅移走可确定的独立署名/版权行到 source_metadata；不靠关键词删除可能的事实。Raw Item 不修改，matching_text 只供后续匹配，不表示已实现精准匹配或事件去重。模型标题最多300字符、正文3500字符、作者200字符，截取记录 text_truncated，完整清洗匹配文本和原文仍保留；过长实际请求由已有上下文限制明确拒绝。
+
+Ollama 单条 JSON 输入，独立严格 schema，temperature=0 / stream=false / format JSON Schema；直接 JSON / code fence / object 提取后验证，解析或业务校验最多一次重试，HTTP 超时或连接失败不无限重试。Trace stage=item_normalization，沿用 request_id/call_id、原始响应留存与脱敏。失败保存状态和安全错误，不保存半成品正文。
+
+当前没有可信证据访问能力，claims 只有 reported / unconfirmed / conflicting / unknown，禁止 officially_confirmed。程序写入真实 item_id / URL 来源快照，模型无 source 字段；语言、明显任务漂移、无来源年份/事件日期与虚构链接有轻量检查。多日期不能确定事件时间时 event_date=null 并提醒，实体/机构矛盾仍主要依赖模型 warnings，不代表机器事实核验。
+
+本阶段不改变 Item Analyze / Digest / Scheduler / Notification，不默认自动触发规范化，不增加采集配额或额外后台模型调用。未来 Event 是跨 Item 的事件单元，Brief 是本阶段单条中文简讯，Digest 仍是现有 Topic 简报；尚未实现新版 Event 聚类、开放发现或跨事件综合 Digest。

@@ -6,6 +6,7 @@ SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具�
 
 ## 当前功能
 
+- Task A 单条规范化简讯：确定性文本清洗 → Topic 无关的事实提取 → 中文简讯与结构化字段，保留原文、版本及真实来源；默认手动触发，不增加 Scheduler 模型调用。
 - 中文 Dashboard、Topic 管理、内容筛选/排序、简报阅读及回收站。
 - Topic 支持 name、description、逐条 include / exclude 规则、0～1 阈值（默认 0.80）、enabled。
 - Query Builder 根据名称、描述与启用的包含条件提取关键词；内置 ChatGPT 模型、诺兰新电影简短模板，其他主题采用保守提取。最多 2 查询，不调用 AI 改写；不是通用自然语言翻译器。
@@ -29,7 +30,7 @@ Topic 描述 / 规则 / 阈值
 → PostgreSQL（来源快照）→ Frontend
 ```
 
-项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0006**。
+项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0007**。
 
 ## 本地安装与启动
 
@@ -143,3 +144,12 @@ npm run build
 - 没有 Embedding、Vector DB、RAG 或新 AI Agent 框架。
 
 后续优先根据实际使用反馈改进可靠性、人工复核体验与分页，不将以上未实现功能标为完成。
+
+
+## Task A：单条智能简讯
+
+扫描得到 Item 后，在内容卡片的“AI 规范化简讯”点击“生成简讯”。已有同一原文/版本结果直接复用；“重新生成”显式产生新修订，旧记录保留。该能力与 Topic 相关性分析、Digest 分离，不会自动重新运行它们。
+
+人物、机构、事件类型、事件日期、关键词、claims 与 warnings 随简讯保存。`reported` 只代表来源声称，当前不做官方核验或交叉验证，不允许模型标记 `officially_confirmed`。YouTube 明确为 metadata-only，不代表已观看视频；其他来源也只使用实际已有的 snippet。
+
+新增 migration `0007_item_normalization.py`，升级前保留本机备份。规范化失败显示错误、可重试，不修改 Raw Item。详情与验收见 [Task A 记录](docs/development/task-a-normalization.md)。

@@ -18,6 +18,9 @@ export type TopicInput = Pick<Topic, "name" | "description" | "enabled" | "relev
 
 // 只转换展示文案，不改变后端响应、HTTP 状态或请求参数。
 const errorMessages: Record<string, string> = {
+  "规范化失败：结构化结果或事实安全校验未通过，请重试或查看本机 Trace。": "结构化结果或事实安全校验未通过，请重试或查看本机 Trace。",
+  "规范化失败：Ollama 不可用或请求超时，请检查本机服务和模型后重试。": "Ollama 不可用或请求超时，请检查本机服务和模型后重试。",
+  "当前 AIProvider 不支持信息规范化。": "当前 AIProvider 不支持信息规范化。",
   "AI summary contains unsupported facts. Check source metadata and retry.": "AI 摘要包含资料未支持的内容，未采用该结果。请核对来源后重新分析。",
   "AI input is too long. Shorten Topic rules or descriptions before retrying.": "AI 输入过长，请缩短主题描述或启用的规则后重试。原始内容仍已保留。",
   "内容不存在或已被永久删除。": "内容不存在或已被永久删除。",
@@ -237,4 +240,22 @@ export async function restoreContent(kind: ContentKind, id: number) {
 }
 export async function permanentlyDelete(kind: ContentKind, id: number) {
   await request(`/trash/${kind}/${id}`, { method: "DELETE" }, 12000, contentBase);
+}
+
+
+export type ItemNormalization = {
+  id: number; item_id: number; schema_version: string; revision: number;
+  normalization_status: "processing" | "completed" | "failed";
+  headline: string | null; summary: string | null; entities: string[] | null;
+  event_type: string | null; event_date: string | null; keywords: string[] | null;
+  claims: { text: string; status: "reported" | "unconfirmed" | "conflicting" | "unknown" }[] | null;
+  warnings: string[]; source_reference: { item_id: number; url: string; source: string; author: string | null; published_at: string | null };
+  content_coverage: string; text_truncated: boolean; source_metadata: Record<string, unknown>;
+  matching_text: string; model_name: string; normalized_at: string | null; error: string | null;
+};
+export async function getItemNormalization(id: number, signal?: AbortSignal): Promise<ItemNormalization | null> {
+  return (await request(`/items/${id}/normalization`, { signal }, 5000, "http://127.0.0.1:8000/api")).json();
+}
+export async function normalizeItem(id: number, force = false): Promise<ItemNormalization> {
+  return (await request(`/items/${id}/normalize${force ? "?force=true" : ""}`, { method: "POST" }, 390000, "http://127.0.0.1:8000/api")).json();
 }

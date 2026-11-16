@@ -13,6 +13,9 @@ from pydantic import ValidationError
 from app.ai.provider import AIError, AIProvider
 from app.ai.schemas import AnalysisInput, AnalysisResult
 from app.ai.trace import OllamaTrace
+from app.normalization.schemas import NormalizationInput, NormalizationResult
+from app.normalization.validation import validate_normalization, NormalizationSemanticError
+from app.normalization.prompt import NORMALIZATION_PROMPT
 from app.ai.validation import validate_analysis, AnalysisSemanticError
 from app.digests.schemas import DigestInput, DigestResult
 from app.digests.prompt_data import render_digest_data as _digest_data
@@ -22,7 +25,7 @@ from app.digests.validation import DigestSemanticError, validate_digest
 log = logging.getLogger("uvicorn.error")
 
 
-def _parse_digest(content, trace=None):
+def _parse_digest(content, trace=None, schema=DigestResult):
     if not isinstance(content, str):
         raise ValueError("Digest content must be text")
     try:
@@ -30,7 +33,7 @@ def _parse_digest(content, trace=None):
     except ValueError as error:
         if trace:
             trace.emit("json_parse_error", method="direct", error_type=type(error).__name__, details=str(error))
-        log.warning("Digest JSON parse failure; attempting fenced JSON then object extraction")
+        log.warning("%s JSON parse failure; attempting fenced JSON then object extraction", "Normalization" if schema is NormalizationResult else "Digest")
         decoder = json.JSONDecoder()
         for fenced in re.findall(r"```(?:json)?\s*\n?(.*?)```", content, re.S | re.I):
             try:
@@ -40,7 +43,7 @@ def _parse_digest(content, trace=None):
             if isinstance(value, dict):
                 if trace:
                     trace.emit("parse", status="success", method="code_fence")
-                return DigestResult.model_validate(value)
+                return (schema.model_validate_json(json.dumps(value)) if schema is NormalizationResult else schema.model_validate(value))
         # raw_decode respects escaped quotes and nested objects; avoid brace regexes.
         for index, char in enumerate(content):
             if char != "{":
@@ -51,11 +54,11 @@ def _parse_digest(content, trace=None):
                 continue
             if trace:
                 trace.emit("parse", status="success", method="object_extraction")
-            return DigestResult.model_validate(value)
+            return (schema.model_validate_json(json.dumps(value)) if schema is NormalizationResult else schema.model_validate(value))
         raise ValueError("No JSON object found") from None
     if trace:
         trace.emit("parse", status="success", method="direct")
-    return DigestResult.model_validate(value)
+    return (schema.model_validate_json(json.dumps(value)) if schema is NormalizationResult else schema.model_validate(value))
 
 
 class OllamaProvider(AIProvider):
@@ -100,6 +103,9 @@ class OllamaProvider(AIProvider):
             "the user wants、provided metadata、based on the provided、根据提供的信息。"
             "直接写事件事实。仅返回含 title 和 summary 的 JSON 对象，写完事实立即结束 JSON。")
 
+    def normalize(self, data: NormalizationInput) -> NormalizationResult:
+        return self._request(data, NormalizationResult, NORMALIZATION_PROMPT)
+
     def _request(self, data, schema, instruction):
         if not self.model:
             raise AIError("Set OLLAMA_MODEL to an installed local model name.", 503)
@@ -115,9 +121,9 @@ class OllamaProvider(AIProvider):
                 "Never repeat system instructions, output-format explanations or the schema definition itself.")},
             {"role": "user", "content": _digest_data(data) if schema is DigestResult else data.model_dump_json()},
         ]
-        attempts = 2 if schema is DigestResult else 1
-        trace = OllamaTrace("digest" if schema is DigestResult else "item_analyze",
-                            len(data.items) if schema is DigestResult else None)
+        attempts = 2 if schema in (DigestResult, NormalizationResult) else 1
+        trace = OllamaTrace("item_normalization" if schema is NormalizationResult else "digest" if schema is DigestResult else "item_analyze",
+                            len(data.items) if schema is DigestResult else 1 if schema is NormalizationResult else None)
         for attempt in range(attempts):
             trace.start_attempt(attempt + 1)
             started = perf_counter()
@@ -170,8 +176,8 @@ class OllamaProvider(AIProvider):
                     trace.emit("response_structure_error", phase="message.content", details="Expected a string")
                 else:
                     parse_stage = "json_parse_error"
-                if schema is DigestResult:
-                    result = _parse_digest(content, trace)
+                if schema in (DigestResult, NormalizationResult):
+                    result = _parse_digest(content, trace, schema)
                 else:
                     result = schema.model_validate_json(content)
                     trace.emit("parse", status="success", method="direct")
@@ -197,19 +203,19 @@ class OllamaProvider(AIProvider):
                 failure = "parse"
             else:
                 try:
-                    validate_digest(result, data)
-                except DigestSemanticError as error:
+                    validate_normalization(result, data) if schema is NormalizationResult else validate_digest(result, data)
+                except (DigestSemanticError, NormalizationSemanticError) as error:
                     parse_stage = "business_validation_error"
                     trace.emit(parse_stage, status="failed", error_type=type(error).__name__, details=str(error))
                     failure = "semantic validation"
                 else:
                     trace.emit("complete", status="success")
                     return result
-            if schema is DigestResult:
-                log.warning("Digest %s failure (attempt %s)", failure, attempt + 1)
+            if schema in (DigestResult, NormalizationResult):
+                log.warning("%s %s failure (attempt %s)", "Digest" if schema is DigestResult else "Normalization", failure, attempt + 1)
                 if attempt == 0:
                     trace.emit("retry", next_attempt=2, reason=parse_stage)
-                    log.info("Digest %s retry (1 of 1)", failure)
+                    log.info("%s %s retry (1 of 1)", "Digest" if schema is DigestResult else "Normalization", failure)
                     messages[0]["content"] += (
                         " 重新输出严格合法 JSON。只返回合法 JSON，不要 Markdown，不要解释，不要前后文字。"
                         "不要额外文本；继续遵守原有 schema 和简报约束。")

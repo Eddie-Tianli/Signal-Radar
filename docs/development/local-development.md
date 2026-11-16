@@ -344,3 +344,19 @@ Topic 卡片的 analysis_state / analysis_counts 是当前持久化状态聚合�
 一次 Analyze 最多 180 秒，一键更新最多 20 条；全量历史重分析可能耗时较长。建议先少量分析、核对理由，再开启 Scheduler；保持单个后端进程。条件涉及相对时间时，指纹不会随时钟自动变化，应主动重新分析检查时效。
 
 完整结果、迁移备份与页面验收见 [v0.2.0 实施记录](v0.2.0-implementation.md)。
+
+
+## Task A 单条简讯本地验收
+
+1. 保留 `.env` 中真实模型与数据库配置，先关闭 Scheduler / 通知；备份后执行 `python -m alembic upgrade head`，current 应为 **0007 (head)**，check 无差异。
+2. 启动 PostgreSQL、Ollama 与 SignalRadar，先 USE_MOCK_SOURCE=true 扫描测试 Topic。Mock 只模拟来源，规范化仍调用本机 Ollama。
+3. Item 卡片中分别查看原始信息、既有 AI Analysis、AI 规范化简讯。点击“生成简讯”，检查中文标题/正文、人物机构、事件类型/时间、关键词、claims 和 warnings。
+4. YouTube 必须提示只读取 metadata，未观看视频；reported 是来源声称，不是已证实。来源 URL 和 Item ID 应与原文一致。
+5. 再点击读取已有简讯，应无新模型调用、相同 id/revision；刷新或重启后端仍可读取。更换 Topic 规则不应让 Topic 无关简讯失效。
+6. 显式重新生成创建新修订，旧记录保留数据库。模型未启动/JSON失败时卡片显示失败可重试，原文、Analyze 和 Digest 不受影响。正常重复请求不自动重试成功结果。
+7. Swagger 可测试 POST /api/topics/{id}/normalize?limit=3；逐条调用，不将多条文章塞入一个 Prompt。未接入 Scheduler，无新增自动开关需要开启。
+8. Trace 开启后 stage=item_normalization，按 call_id/request_id 关联 request/response/validation_error/retry；原始数据可能私密，不能公开上传。默认关闭，不修改其他 AI Prompt。
+
+模型请求沿用180秒超时和有界输出预算，最多一次解析/业务校验重试。简讯不是事实核验或未来 Event 聚类，不能据此将未经确认的私人关系/动机写成确定事实。
+
+Windows 后端测试约定保持：每次 `D:\pytest-temp` 新 GUID、`--basetemp`、`-p no:cacheprovider`。运行完整后端、npm run test:api、npm run lint、npm run build，真实模型验收结果单独记录在 [Task A 记录](task-a-normalization.md)。

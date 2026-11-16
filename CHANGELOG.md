@@ -6,6 +6,10 @@ v0.2.0 本地候选版本；未创建发布 Tag。
 
 ### Added
 
+- Task A：独立 TextPreprocessor、NormalizationService 与单条中文简讯，提取实体、关键词、事件日期及保守来源声称。
+- Alembic 0007 新增 item_normalizations，支持按输入指纹/schema 幂等、失败重试和显式新修订，不覆盖原文。
+- 单条/Topic 批量规范化 API、原文与 AI 简讯分区、来源追溯及 metadata-only 提示；复用 Ollama JSON Schema、Trace 与最多一次重试。
+
 - Topic 自然语言描述、独立包含/排除规则、启用状态和默认 0.80 阈值，直接规则冲突提示。
 - 确定性 Query Builder、实际查询记录，最多 2 次搜索和 1 次批量 YouTube 真实统计请求。
 - 可检查的符合度理由、排除状态/理由、有效性状态、配置指纹和规则变化后的历史分析失效。

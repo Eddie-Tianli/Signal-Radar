@@ -143,3 +143,28 @@ sources 是快照而非强制 Item foreign key，因此手动删除 Item 后仍�
 迁移前用 pg_dump custom format 备份并校验可列出目录。0006 仅 ALTER ADD COLUMN / CREATE TABLE / CHECK，不重建 Topic 父表，避免 SQLite 测试中的级联误删。生产升级是 PostgreSQL 事务性 DDL。降级会丢失规则、理由、热度及来源快照，不是正常恢复操作；恢复备份需明确确认覆盖目标，不能盲目执行。
 
 分析失败仅更新失败状态与安全错误，不将 analysis_fingerprint 改成新规则指纹；已有摘要与上次成功时间保留为历史。API 按当前配置计算 analysis_stale，failed 不被伪装为 invalid 或成功。
+
+
+## Task A / migration 0007：item_normalizations（已实现）
+
+`Item 1:N ItemNormalizationRecord`，表为 `item_normalizations`，FK item_id → items.id ON DELETE CASCADE。Topic 不进入规范化主键或输入，一次单条结果可独立用于后续 Topic 语义匹配；不改变当前 Item 所属 Topic 的设计。
+
+| 字段 | 类型 / 说明 |
+| --- | --- |
+| id / item_id | integer PK / FK，item_id 索引 |
+| schema_version / input_fingerprint / revision | varchar(20) / varchar(64) / integer |
+| normalization_status | varchar(20)，CHECK processing / completed / failed |
+| headline / summary | nullable text；未成功时为空 |
+| entities / keywords / claims | nullable JSON，claims 为 text + status |
+| event_type / event_date | nullable varchar(80) / date，事件时间不等于 published_at |
+| warnings | JSON，模型提醒加程序覆盖/核验范围说明 |
+| source_reference | JSON，程序生成的真实 item_id/url/source/author/published_at 快照 |
+| content_coverage / text_truncated | varchar(30) / boolean |
+| source_metadata / matching_text | JSON / text，署名版权等与清洗后的匹配文本 |
+| model_name / normalized_at / error | text / nullable timestamptz / nullable text |
+
+唯一约束 `(item_id, schema_version, input_fingerprint, revision)`。fingerprint 包含完整 Raw Item 相关字段与清洗版本，不包含 Topic 或模型名；更换模型需显式 force。相同输入/schema 默认复用最新 completed；failed/中断 processing 重试同条记录。force=true 在完成结果之后新建修订，不覆盖旧成功记录。API 默认返回当前输入最新修订，旧修订保存在数据库，当前未提供前端版本历史选择器。
+
+先提交 processing 标记，校验通过才一次保存所有结果字段和 completed；失败只写 failed/error，不存半成品。Topic 级单进程锁与既有删除/扫描协作，数据库唯一约束兜底；不声称跨进程分布式幂等。Raw Item 软删除时结果一起隐藏并可随恢复读取，永久删除/删除 Topic 会级联删除。
+
+0007 只新增表，不回填/覆盖旧 Item、AI 或 Digest。升级前备份，旧 migration 保持原样。downgrade 0006 会删除规范化结果，日常不执行降级。
