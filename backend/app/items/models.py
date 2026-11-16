@@ -51,5 +51,6 @@ class ItemRecord(Base):
     analysis_error: Mapped[str | None] = mapped_column(Text)
     popularity_score: Mapped[float | None] = mapped_column(Float)
     popularity_metrics: Mapped[dict | None] = mapped_column(JSON)
+    canonical_url_hash: Mapped[str | None] = mapped_column(String(64),unique=True,index=True)
 
     normalizations = relationship("ItemNormalizationRecord", back_populates="item", cascade="all, delete-orphan", passive_deletes=True)

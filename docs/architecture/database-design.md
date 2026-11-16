@@ -168,3 +168,29 @@ sources 是快照而非强制 Item foreign key，因此手动删除 Item 后仍�
 先提交 processing 标记，校验通过才一次保存所有结果字段和 completed；失败只写 failed/error，不存半成品。Topic 级单进程锁与既有删除/扫描协作，数据库唯一约束兜底；不声称跨进程分布式幂等。Raw Item 软删除时结果一起隐藏并可随恢复读取，永久删除/删除 Topic 会级联删除。
 
 0007 只新增表，不回填/覆盖旧 Item、AI 或 Digest。升级前备份，旧 migration 保持原样。downgrade 0006 会删除规范化结果，日常不执行降级。
+
+
+## Task B / migrations 0008–0009（当前 head 0009）
+
+只新增表与nullable列/索引，不删除旧内容，不改0001–0007。新增：
+
+| 表 | 关键内容 / 约束 |
+| --- | --- |
+| events | integer稳定PK、canonical_title、event_type/family、event_date、summary、primary_entities、facts、active/developing/closed、created/updated；identity_fingerprint唯一 |
+| event_entities | event_id + entity_key复合PK，entity_key索引供候选检索 |
+| event_sources | Event关联多个NormalizedItem；normalized_item_id唯一可空，删除原记录SET NULL，真实URL/Item快照与声称保留；url_key索引 |
+| topic_matches | normalized_item_id/topic_id/config_fingerprint唯一；status/score/规则/排除理由/依据/AI参与/处理状态/错误 |
+| event_decisions | normalized_item_id/resolver_version唯一；候选ID、最终关系、Event ID、依据、证据快照、AI参与、失败与重试审计 |
+| event_updates | event_id/fact_fingerprint唯一；normalized_item_id可空、new_event/new_facts/conflict、new_facts、真实source_reference、importance与时间 |
+| event_topics | event_id/topic_id/match_id唯一；支持多Topic，当前有效关联按配置指纹过滤，旧依据保留 |
+| event_notifications | topic_id/event_id/event_update_id唯一；pending/sending/sent/failed/suppressed、原因、错误、sent_at，派发状态持久化 |
+
+新增 items.canonical_url_hash nullable varchar(64)，唯一索引。新写入计算规范化URL指纹（保留身份fragment、去追踪参数）；旧值保持null，避免清理/合并历史行。对旧数据精确URL仍检查，未回填指纹的旧追踪参数变体可能需要后续维护；不删除旧重复项。source/external_id原唯一约束继续存在。
+
+Raw Item仍有一个采集归属Topic；NormalizedItem通过topic_matches可用于多个Topic，Event通过event_topics共享，不复制规范化模型结果。Event不代表已核实事实。所有声称状态继续沿用Task A保守枚举，无officially_confirmed。
+
+发送状态遵循持久化at-most-once尝试；sending在崩溃后表示结果未知，不自动重试。通知disabled时保留pending。永久删除Topic会删除其匹配/关联/通知，但保留共享Event与历史来源快照；永久删除Item使规范化FK置空，事件历史仍可追溯URL快照。
+
+升级前本机备份，upgrade head/current/check；downgrade0007会丢失Task B表与URL指纹，仅用于隔离迁移测试，不用于日常操作。
+
+0009 为 topic_matches 增加 nullable JSON topic_snapshot，保留当时的名称、描述、规则、阈值、别名与策略版本。旧记录允许null；新判断均保存快照，改规则后仍可解释历史。0008只建事件表，0009为增量字段，均不改写原有Raw/AI/Digest。

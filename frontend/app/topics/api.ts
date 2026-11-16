@@ -18,6 +18,10 @@ export type TopicInput = Pick<Topic, "name" | "description" | "enabled" | "relev
 
 // 只转换展示文案，不改变后端响应、HTTP 状态或请求参数。
 const errorMessages: Record<string, string> = {
+  "事件处理正在运行，请稍后重试。":"事件处理正在运行，请稍后重试。",
+  "Topic 匹配失败，请检查 Ollama 后重试。":"主题语义核验未完成，请检查 Ollama 后重试。",
+  "事件关系核验失败，请检查 Ollama 后重试。":"事件关系核验未完成，未强行合并，请检查 Ollama 后重试。",
+  "事件不存在。":"事件不存在，请刷新列表。",
   "规范化失败：结构化结果或事实安全校验未通过，请重试或查看本机 Trace。": "结构化结果或事实安全校验未通过，请重试或查看本机 Trace。",
   "规范化失败：Ollama 不可用或请求超时，请检查本机服务和模型后重试。": "Ollama 不可用或请求超时，请检查本机服务和模型后重试。",
   "当前 AIProvider 不支持信息规范化。": "当前 AIProvider 不支持信息规范化。",
@@ -171,15 +175,16 @@ export async function listDigests(id: number, signal: AbortSignal): Promise<Dige
 
 export type UpdateProgress = {
   topic_id: number; status: "running" | "completed" | "partial" | "failed";
-  stage: "scan" | "analyze" | "digest" | "complete";
+  stage: "scan" | "analyze" | "events" | "digest" | "complete";
   completed_steps: string[]; fetched: number; created: number; duplicates: number;
   processed: number; relevant: number; irrelevant: number; review: number; failed: number; pending_remaining: number;
   queries: string[]; warnings: string[];
+  event_mode?: boolean; events_processed?: number; event_relations?: Record<string,number>; event_failed?: number;
   digest: Digest | null; digest_skipped: string | null; error: string | null; failed_stage: string | null;
 };
 
 export async function updateTopic(id: number, signal: AbortSignal, onProgress: (progress: UpdateProgress) => void) {
-  const response = await request(`/${id}/update`, { method: "POST", signal }, 4100000);
+  const response = await request(`/${id}/update`, { method: "POST", signal }, 7500000);
   if (!response.body) throw new Error("无法读取更新进度，请刷新主题查看已保存的结果。");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -258,4 +263,30 @@ export async function getItemNormalization(id: number, signal?: AbortSignal): Pr
 }
 export async function normalizeItem(id: number, force = false): Promise<ItemNormalization> {
   return (await request(`/items/${id}/normalize${force ? "?force=true" : ""}`, { method: "POST" }, 390000, "http://127.0.0.1:8000/api")).json();
+}
+
+
+export type TopicMatch = { normalized_item_id:number; topic_snapshot:Record<string,unknown>|null; id:number; topic_id:number; match_status:"matched"|"unmatched"|"uncertain"; relevance_score:number; matched_rules:string[]; exclusion_reason:string; match_reason:string; ai_used:boolean; processing_status:string; error:string|null };
+export type EventDecision = { id:number; event_id:number|null; relation:"new_event"|"duplicate_report"|"event_update"|"uncertain"; candidate_ids:number[]; reason:string; ai_used:boolean; processing_status:string; error:string|null; attempts:{reason:string; relation?:string; ai_used:boolean}[] };
+export type EventProcessing = { item_id:number; normalized_item_id:number; matches:TopicMatch[]; decision:EventDecision|null; complete?:boolean; stale_match_count?:number };
+export type EventSummary = { id:number; canonical_title:string; event_type:string; event_date:string|null; summary:string; primary_entities:string[]; event_status:"active"|"developing"|"closed"; created_at:string; updated_at:string; source_count:number; topics:{id:number;name:string;enabled:boolean}[] };
+export type EventDetail = EventSummary & {
+  facts:{text:string;status:string}[]; topic_matches:(TopicMatch&{stale:boolean})[];
+  sources:{id:number;normalized_item_id:number|null;reference:{item_id:number;url:string;source:string;author:string|null;headline:string};claims:{text:string;status:string}[]}[];
+  updates:{id:number;update_type:string;new_facts:{text:string;status:string}[];importance:number;created_at:string;source_reference:{url:string;item_id:number}}[];
+  decisions:EventDecision[];
+  notifications:{id:number;topic_id:number;event_update_id:number;status:string;reason:string;error:string|null;sent_at:string|null}[];
+};
+const rootApi="http://127.0.0.1:8000/api";
+export async function getEventProcessing(id:number,signal?:AbortSignal):Promise<EventProcessing|null> {
+  return (await request(`/items/${id}/event-processing`,{signal},5000,rootApi)).json();
+}
+export async function resolveItem(id:number,topicId:number,retry=false):Promise<EventProcessing> {
+  return (await request(`/items/${id}/resolve?topic_id=${topicId}&retry=${retry}`,{method:"POST"},1150000,rootApi)).json();
+}
+export async function listEvents(topicId?:number,signal?:AbortSignal):Promise<EventSummary[]> {
+  return (await request(`/events${topicId===undefined ? "" : `?topic_id=${topicId}`}`,{signal},5000,rootApi)).json();
+}
+export async function getEvent(id:number,signal?:AbortSignal):Promise<EventDetail> {
+  return (await request(`/events/${id}`,{signal},5000,rootApi)).json();
 }

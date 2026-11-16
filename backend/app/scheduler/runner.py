@@ -9,6 +9,7 @@ from app.collection.provider import get_source
 from app.ai.ollama import get_ai_provider
 from app.notifications.service import notify_safely, get_notification_service
 from app.workflows.service import TopicUpdateService
+from app.events.notifications import dispatch_candidates
 from app.workflows.locks import topic_operation, TopicBusy
 
 log = logging.getLogger("uvicorn.error")
@@ -48,10 +49,12 @@ def run_cycle(resource_factory=resources, stop=None, notification_factory=get_no
                         log.info("Topic %s Analysis completed Analyzed %s Relevant %s", topic_id, result.processed, result.relevant)
                         if result.digest is not None:
                             log.info("Topic %s Digest created %s", topic_id, result.digest.id)
-                            if result.relevant:
+                            if result.relevant and not result.event_mode:
                                 notify_safely(topic_id, topic_name, result.relevant, notification_factory)
                         else:
                             log.info("Topic %s Digest skipped", topic_id)
+                        if result.event_mode:
+                            dispatch_candidates(session,topic_id,notification_factory)
                         if result.error:
                             log.error("Topic %s job failed", topic_id)
                             continue

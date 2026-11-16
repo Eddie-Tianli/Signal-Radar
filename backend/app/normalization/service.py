@@ -67,7 +67,9 @@ class NormalizationService:
         record.model_name = getattr(self.provider,"model",type(self.provider).__name__)
         self.session.commit()  # visible in-flight marker; crash can be retried, no partial result
         try:
-            result = NormalizationResult.model_validate(self.provider.normalize(data))
+            candidate = self.provider.normalize(data)
+            # Revalidate provider model instances too; model_copy/model_construct can bypass nested checks.
+            result = NormalizationResult.model_validate_json(candidate.model_dump_json()) if isinstance(candidate, NormalizationResult) else NormalizationResult.model_validate(candidate)
             result = validate_normalization(result, data)
         except Exception as error:
             # Provider failures must leave a retryable marker, never a half-written brief.

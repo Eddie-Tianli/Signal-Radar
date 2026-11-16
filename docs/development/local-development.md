@@ -360,3 +360,25 @@ Topic 卡片的 analysis_state / analysis_counts 是当前持久化状态聚合�
 模型请求沿用180秒超时和有界输出预算，最多一次解析/业务校验重试。简讯不是事实核验或未来 Event 聚类，不能据此将未经确认的私人关系/动机写成确定事实。
 
 Windows 后端测试约定保持：每次 `D:\pytest-temp` 新 GUID、`--basetemp`、`-p no:cacheprovider`。运行完整后端、npm run test:api、npm run lint、npm run build，真实模型验收结果单独记录在 [Task A 记录](task-a-normalization.md)。
+
+
+## Task B：事件与通知验收
+
+1. 停止旧SignalRadar进程，保留.env并备份数据库。执行 `python -m alembic upgrade head` / current / check，应为 **0009 (head)** 且无差异。
+2. 默认 EVENT_PROCESSING_ENABLED=false，避免意外增加本地8B调用；手动在Item简讯下点击“识别事件”。首次会复用或生成Task A简讯。需要Ollama时先启动Ollama，MockSource不模拟AI。
+3. 打开 `/events`，查看事件类型/日期、原始链接数、当前关联Topic、来源声称与冲突、更新历史、依据和通知状态。
+4. 可在Swagger对同一Item省略topic_id调用resolve，复用一次规范化结果匹配多个enabled Topic（最多50，建议指定Topic逐个验证）。改规则后旧匹配不自动有效，重新resolve后按当前指纹判断。
+5. 开启自动阶段：EVENT_PROCESSING_ENABLED=true，重启；一键更新与Scheduler共用EventPipeline，每轮最多3条附加事件。旧Analyze/Digest仍独立，Task B通知不依赖Digest成功，不额外发送旧Digest通知。
+6. 自动通知另需 SCHEDULER_ENABLED=true / NOTIFICATIONS_ENABLED=true。重复报道只增来源无通知；重要新事实才有候选；uncertain/冲突不自动推。disabled通知保持pending，发送前持久化sending；异常或中断不盲目重发，可能漏通知。停用自动：Ctrl+C，两个enabled开关设false并重启。
+7. 一条失败原文仍保留，后续可重试；明确关系缓存复用，uncertain需单条retry=true。不要用反复扫描来重试事件AI。
+
+### 可重复离线HTTP演示
+
+```powershell
+cd D:\Projects_ltl\Signal-Radar\backend
+.\.venv\Scripts\python.exe scripts/demo_event_pipeline.py
+```
+
+使用Fake Source / Fake AI / Fake Notification与 D:\pytest-temp 下新GUID SQLite，通过真实FastAPI TestClient接口依次：创建Topic→扫描→规范化→匹配建事件→第二来源重复报道→第三来源售价进展→读取来源历史。预期一个Event、三个来源、两条Update、两次Fake通知（1→1→2），关闭/重连数据库后状态仍保留；不访问真实YouTube，不调用Ollama模型，不弹系统通知。脚本只在进程内关闭Scheduler/通知/Trace，不修改.env或正式数据库。
+
+全量测试仍每次使用新GUID basetemp与 -p no:cacheprovider，开启RUN_POSTGRES_TESTS=1覆盖PostgreSQL；前端 npm run test:api / lint / build。Fake结果不能作为真实8B语义质量保证。当前匹配依赖有限别名、时间窗口和小模型，可能漏合并或误判，来源身份无证据时待复核。详见 [Task B记录](task-b-events.md)。

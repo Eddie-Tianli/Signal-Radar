@@ -13,3 +13,10 @@ def no_real_notifications(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("Tests must never display real Windows notifications")
     monkeypatch.setattr("app.notifications.service.WindowsNotificationService.send", forbidden)
+    monkeypatch.setattr("app.notifications.service.WindowsNotificationService.send_event", forbidden)
+
+
+@pytest.fixture(autouse=True)
+def no_implicit_event_ai(monkeypatch):
+    # Integration tests explicitly enable the bounded additional phase.
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED", "false")

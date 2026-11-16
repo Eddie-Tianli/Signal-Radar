@@ -91,3 +91,6 @@ python -m pytest -q -p no:cacheprovider --basetemp $testTempPath
 
 
 v0.2.0 增量迁移 `0006_intent_pipeline.py` 保留旧表、Raw Item 和 AI 结果；升级前先做本机 pg_dump 备份。旧分析需在当前规则下重新确认，旧 Digest 的 sources 为 null 仍可读取。详细规则、阈值、热度算法及验收见根 README 和 docs/development/v0.2.0-implementation.md。
+
+
+Task B当前migration为0009（0008新增事件表，0009新增匹配配置快照），新增事件/匹配/通知状态表；Task A规范化保留。升级前备份，默认附加自动阶段关闭，可用 `python scripts/demo_event_pipeline.py` 离线验收。详情见 docs/development/task-b-events.md。

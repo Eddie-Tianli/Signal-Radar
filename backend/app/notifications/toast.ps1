@@ -8,7 +8,8 @@ try {
     $xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>SignalRadar</text><text></text><text></text></binding></visual></toast>')
     $nodes = $xml.GetElementsByTagName('text')
     $nodes.Item(1).AppendChild($xml.CreateTextNode([string]$payload.topic)) | Out-Null
-    $nodes.Item(2).AppendChild($xml.CreateTextNode(('{0} new relevant items. A new Digest is ready.' -f [int]$payload.count))) | Out-Null
+    $message = if ($payload.message) { [string]$payload.message } else { '{0} new relevant items. A new Digest is ready.' -f [int]$payload.count }
+    $nodes.Item(2).AppendChild($xml.CreateTextNode($message)) | Out-Null
     $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     # Existing Windows PowerShell app identity: no registry/shortcut registration needed.
     $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'

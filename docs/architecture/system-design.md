@@ -141,3 +141,38 @@ Ollama 单条 JSON 输入，独立严格 schema，temperature=0 / stream=false /
 当前没有可信证据访问能力，claims 只有 reported / unconfirmed / conflicting / unknown，禁止 officially_confirmed。程序写入真实 item_id / URL 来源快照，模型无 source 字段；语言、明显任务漂移、无来源年份/事件日期与虚构链接有轻量检查。多日期不能确定事件时间时 event_date=null 并提醒，实体/机构矛盾仍主要依赖模型 warnings，不代表机器事实核验。
 
 本阶段不改变 Item Analyze / Digest / Scheduler / Notification，不默认自动触发规范化，不增加采集配额或额外后台模型调用。未来 Event 是跨 Item 的事件单元，Brief 是本阶段单条中文简讯，Digest 仍是现有 Topic 简报；尚未实现新版 Event 聚类、开放发现或跨事件综合 Digest。
+
+
+## Task B — Event 处理层（已实现，migration 0008）
+
+```text
+Raw Item → NormalizationService → ItemNormalizationRecord
+                                  ↓ (跨Topic复用，不含Topic的事实摘要)
+                              TopicMatcher
+                                  ↓ matched
+                      EventResolver（索引候选 ≤20）
+                        ↓           ↓          ↓
+                    new_event   duplicate    event_update / uncertain
+                        ↓           ↓          ↓
+                     Event ← EventSource    EventUpdate / 保留审计
+                        ↓
+                EventTopic + Notification Candidate
+                        ↓ (Scheduler独立派发，发送前持久化领取)
+                 NotificationService → Windows
+```
+
+原有 Analyze→Digest 支线继续保留，Task B 不重写 Digest。自动事件阶段在既有一键更新的 Analyze 后、Digest 前执行；附加阶段默认关闭，开启每轮最多3条，单条API独立可用。手动与Scheduler调用同一 EventPipeline，旧历史可逐条补充，不强制全量回填。
+
+TopicMatcher：仅明确“排除关键词：X / 禁止包含：X”和“必须包含关键词：X”采用字面硬规则；自然语言主旨/身份规则不做简单提及排除。简单无额外限制时需标题和声称存在直接主体—行为关系；复杂描述、规则或关系进入AI，身份无法核验时强制uncertain，阈值由程序最后判断。内置少量公开名称别名，不是通用实体链接器。配置指纹使旧匹配失效，审计保留依据/AI参与/失败。
+
+Event候选查询使用 event_entities 索引子查询、family与事件日期（通常±7天；明确价格进展±90天；无日期以最近90天updated_at）限制，SQL LIMIT 21用于发现超限；超过20或多候选无法唯一确定则uncertain。没有加载全部历史Event。PostgreSQL JSON不能做SELECT DISTINCT整行，使用ID子查询避免该兼容问题。
+
+相同事实键及兼容主体/行为/时间可判重复；同实体不同产品或行为不合并。同一明确产品的新价格声称可确定性增量；其他模糊单候选使用一次有界AI比较（结构化事实，最多20条旧声称）。confidence<0.85或无合法事实索引不合并。AI不能生成Event ID或新事实，只能引用incoming claims索引；来源始终程序关联。
+
+EventUpdate按(event_id,fact_fingerprint)唯一，重复事实不新增，reported与unconfirmed的纯状态浮动不是新事实；conflicting单独保留，不覆盖旧声称。事件摘要追加来源声称，不提升官方确认。普通重要增量importance>=0.8可形成候选，冲突不自动发确定性通知。
+
+通知唯一(topic_id,event_id,event_update_id)，与Digest保存分离。派发前重查当前Topic规则、enabled及未删除来源；不符合则suppressed。先提交sending，再调用系统通知；成功sent，异常failed，重启不自动重发sending/failed，避免重试重复弹窗，代价是可能漏发，不声称exactly-once。
+
+Topic锁沿用；额外全局单进程Event锁避免不同Topic同时创建同一事件，数据库唯一约束兜底。不支持多worker/分布式锁。旧来源软删除不抹除已保存事件历史，永久删除Raw仍留来源快照；Topic删除移除关联/通知，跨Topic共享事件和来源快照保留。
+
+多Topic扫描同一链接时，ScanResult.item_ids携带实际发现的既有Item ID，EventPipeline复用其简讯按当前Topic匹配。仍不复制Raw；跨采集归属时额外领取原归属Topic锁，避免与进行中的规范化任务重入。0009保存匹配时的Topic配置快照，Event详情可回查过期规则。

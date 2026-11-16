@@ -6,6 +6,7 @@ SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具�
 
 ## 当前功能
 
+- Task B 事件识别：混合 Topic 匹配、有界事件候选检索、重复报道/实质更新/待复核区分，保留来源、冲突和持久化通知状态。
 - Task A 单条规范化简讯：确定性文本清洗 → Topic 无关的事实提取 → 中文简讯与结构化字段，保留原文、版本及真实来源；默认手动触发，不增加 Scheduler 模型调用。
 - 中文 Dashboard、Topic 管理、内容筛选/排序、简报阅读及回收站。
 - Topic 支持 name、description、逐条 include / exclude 规则、0～1 阈值（默认 0.80）、enabled。
@@ -30,7 +31,7 @@ Topic 描述 / 规则 / 阈值
 → PostgreSQL（来源快照）→ Frontend
 ```
 
-项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0007**。
+项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0009**。
 
 ## 本地安装与启动
 
@@ -71,6 +72,7 @@ cd ..
 | OLLAMA_MODEL | `ollama list` 中的完整模型名称，例如本机 `deepseek-r1:8b` |
 | OLLAMA_NO_THINK_HINT | false；可选 `/no_think` 兼容提示，仅适用于支持该提示的模型，不保证停止 thinking |
 | OLLAMA_TRACE_ENABLED | false；显式开启才保存完整 Prompt 和模型回复 |
+| EVENT_PROCESSING_ENABLED | false；开启后一键更新/Scheduler 每轮额外处理最多3条事件，使用事件级通知去重 |
 | SCHEDULER_ENABLED | false；是否自动更新 enabled Topic |
 | SCAN_INTERVAL_MINUTES | 60；0.1～10080 分钟 |
 | NOTIFICATIONS_ENABLED | false；Windows 通知开关 |
@@ -103,7 +105,7 @@ Trace：`backend/logs/ollama_trace.jsonl`。可能含私人 Topic、原文和模
 
 `USE_MOCK_SOURCE=true` 时每个 query 返回 3 条稳定模拟内容；2 查询可返回 6 条，改变查询可能产生新的模拟 ID。它不是正式来源，内容和本地链接不代表真实新闻。MockSource 不模拟 AI，默认分析仍需要本地 Ollama。
 
-Scheduler 与手动更新使用同一 TopicUpdateService。安全试用时先保持关闭；开启后使用单个后端进程，不使用 reload 或多 worker。没有有效摘要输入变化时跳过自动简报；显式重新分析且结果未变也不会重复自动生成。Windows 通知只在本轮有新有效 Item 且已保存新 Digest 时发送，错误只写日志。安全关闭：Ctrl+C → `SCHEDULER_ENABLED=false` → 重启。
+Scheduler 与手动更新使用同一 TopicUpdateService。安全试用时先保持关闭；开启后使用单个后端进程，不使用 reload 或多 worker。没有有效摘要输入变化时跳过自动简报；显式重新分析且结果未变也不会重复自动生成。EVENT_PROCESSING_ENABLED=false 时保留原 Digest 通知；开启后改用已持久化事件候选，重复报道不通知，通知不依赖 Digest 成功。错误只写日志。安全关闭：Ctrl+C → `SCHEDULER_ENABLED=false` → 重启。
 
 ### 删除与回收站
 
@@ -138,7 +140,7 @@ npm run build
 - Query Builder 是可解释模板/关键词提取，不是任意语言的完整意图解析器；复杂规则语义与身份判断仍可能需要人工复核。
 - AI 分数不是可靠性保证；8B 模型可能误判、超时或格式失败。语言/格式/指令漂移检查不能证明事实正确，也不能彻底消除 prompt injection。
 - 热度是 YouTube 内部启发式，不是跨来源的客观热榜。
-- 整合非常保守，不做通用事件聚类；无法确认同一事件就分开，可能漏合并。
+- Digest 整合与 EventResolver 均保守；事件关系无法确认时待复核，不强行合并，可能漏合并。
 - `(source, external_id)` 全局唯一，一个 Item 只归属一个 Topic，暂无多 Topic 关联。
 - 没有分页、持久化队列、跨进程锁、断线进度恢复、开机自启或休眠恢复。
 - 没有 Embedding、Vector DB、RAG 或新 AI Agent 框架。
@@ -153,3 +155,21 @@ npm run build
 人物、机构、事件类型、事件日期、关键词、claims 与 warnings 随简讯保存。`reported` 只代表来源声称，当前不做官方核验或交叉验证，不允许模型标记 `officially_confirmed`。YouTube 明确为 metadata-only，不代表已观看视频；其他来源也只使用实际已有的 snippet。
 
 新增 migration `0007_item_normalization.py`，升级前保留本机备份。规范化失败显示错误、可重试，不修改 Raw Item。详情与验收见 [Task A 记录](docs/development/task-a-normalization.md)。
+
+
+## Task B：事件识别与增量更新
+
+在 Item 简讯下点击“识别事件”，或访问 `/events` 查看事件、来源和更新历史。事件是多个报道共同关联的现实事件，不是关键词分类，也不表示已经证实。同一规范化结果可匹配多个 Topic；每个 Topic 规则指纹独立失效，不重新调用规范化模型。
+
+确定性规则先检查主体—行为关系与明确字面条件，复杂自然语言交给 AI；来源身份无法核实时待复核。事件按实体索引/类型/时间选最多20候选，明确重复只增加来源；有可追溯新事实才创建 EventUpdate。冲突保留两边说法，不覆盖原事实、不升级官方确认。
+
+自动使用时设置 `EVENT_PROCESSING_ENABLED=true` 并重启，再按需启用 Scheduler / NOTIFICATIONS_ENABLED。默认关闭附加阶段以控制本地8B调用量，单条手动识别始终可用。通知先持久化领取再调用 Windows；失败或中断不自动重发，因此可能漏发，不能保证端到端 exactly-once。
+
+可重复离线演示（Fake AI / Fake 通知，隔离数据库，不消耗 API 配额、不弹窗）：
+
+```powershell
+cd D:\Projects_ltl\Signal-Radar\backend
+.\.venv\Scripts\python.exe scripts/demo_event_pipeline.py
+```
+
+预期：1个Event、3个来源、2条更新（初始事件+售价进展）、2次Fake通知，重复报道无通知。详见 [Task B 实施与验收](docs/development/task-b-events.md)。

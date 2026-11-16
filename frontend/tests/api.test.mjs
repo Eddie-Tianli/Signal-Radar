@@ -111,3 +111,19 @@ test("normalization read, reuse and explicit regeneration have distinct requests
     ["http://127.0.0.1:8000/api/items/5/normalize?force=true","POST"],
   ]);
 });
+
+
+test("event processing, semantic retry and event reads use additive endpoints", async()=>{
+  const calls=[];
+  const service=api(async(url,options)=>{calls.push([url,options.method]);return new Response(JSON.stringify({}));});
+  await service.getEventProcessing(3);
+  await service.resolveItem(3,7,true);
+  await service.listEvents(7);
+  await service.getEvent(9);
+  assert.deepEqual(calls,[
+    ["http://127.0.0.1:8000/api/items/3/event-processing",undefined],
+    ["http://127.0.0.1:8000/api/items/3/resolve?topic_id=7&retry=true","POST"],
+    ["http://127.0.0.1:8000/api/events?topic_id=7",undefined],
+    ["http://127.0.0.1:8000/api/events/9",undefined],
+  ]);
+});

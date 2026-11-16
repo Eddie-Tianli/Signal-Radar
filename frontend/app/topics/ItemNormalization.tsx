@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getItemNormalization, normalizeItem, type ItemNormalization as Normalization } from "./api";
+import ItemEvents from "./ItemEvents";
 import { formatTime } from "../DigestArticle";
 
 const claimStatus = { reported: "来源声称（未核验）", unconfirmed: "尚未确认", conflicting: "存在冲突", unknown: "无法确定" };
-export default function ItemNormalization({ itemId, disabled }: { itemId: number; disabled: boolean }) {
+export default function ItemNormalization({ itemId, topicId, disabled }: { itemId: number; topicId:number; disabled: boolean }) {
   const [result, setResult] = useState<Normalization | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -46,5 +47,6 @@ export default function ItemNormalization({ itemId, disabled }: { itemId: number
     {!loading && !completed && !busy && <p className="mt-3 text-sm text-muted">{result?.normalization_status === "failed" ? "本次未保存简讯正文，原始信息仍保留。" : "生成一条独立中文简讯，提取人物、机构、关键词及来源声称。"}</p>}
     <div className="mt-4 flex flex-wrap gap-2"><button className="btn btn-quiet text-xs" disabled={disabled || loading || busy} onClick={() => void generate()}>{busy ? "正在生成简讯…" : completed ? "读取已有简讯（不调用模型）" : result ? "重试生成简讯" : "生成简讯"}</button>
     {completed && <button className="btn btn-quiet text-xs" disabled={disabled || busy} onClick={() => void generate(true)}>重新生成（保留旧版本）</button>}</div>
+    <ItemEvents key={`${itemId}-${result?.id ?? "pending"}`} itemId={itemId} topicId={topicId} disabled={disabled||busy} onProcessed={()=>{void getItemNormalization(itemId).then(setResult).catch(()=>{});}}/>
   </section>;
 }

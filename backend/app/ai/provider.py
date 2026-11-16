@@ -20,6 +20,12 @@ class AIProvider(ABC):
         """Topic-independent single-item factual brief; optional provider capability."""
         raise AIError("当前 AIProvider 不支持信息规范化。", 503)
 
+    def match_topic(self, data):
+        raise AIError("当前 AIProvider 不支持 Topic 语义匹配。", 503)
+
+    def compare_event(self, data):
+        raise AIError("当前 AIProvider 不支持事件关系核验。", 503)
+
     @abstractmethod
     def analyze(self, data: AnalysisInput) -> AnalysisResult:
         """Return validated analysis without database access."""

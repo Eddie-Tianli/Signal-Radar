@@ -16,6 +16,8 @@ from app.ai.trace import OllamaTrace
 from app.normalization.schemas import NormalizationInput, NormalizationResult
 from app.normalization.validation import validate_normalization, NormalizationSemanticError
 from app.normalization.prompt import NORMALIZATION_PROMPT
+from app.events.schemas import TopicMatchInput, TopicMatchResult, EventRelationInput, EventRelationResult
+from app.events.prompts import TOPIC_MATCH_PROMPT, EVENT_RELATION_PROMPT
 from app.ai.validation import validate_analysis, AnalysisSemanticError
 from app.digests.schemas import DigestInput, DigestResult
 from app.digests.prompt_data import render_digest_data as _digest_data
@@ -33,7 +35,7 @@ def _parse_digest(content, trace=None, schema=DigestResult):
     except ValueError as error:
         if trace:
             trace.emit("json_parse_error", method="direct", error_type=type(error).__name__, details=str(error))
-        log.warning("%s JSON parse failure; attempting fenced JSON then object extraction", "Normalization" if schema is NormalizationResult else "Digest")
+        log.warning("%s JSON parse failure; attempting fenced JSON then object extraction", "Digest" if schema is DigestResult else schema.__name__)
         decoder = json.JSONDecoder()
         for fenced in re.findall(r"```(?:json)?\s*\n?(.*?)```", content, re.S | re.I):
             try:
@@ -43,7 +45,7 @@ def _parse_digest(content, trace=None, schema=DigestResult):
             if isinstance(value, dict):
                 if trace:
                     trace.emit("parse", status="success", method="code_fence")
-                return (schema.model_validate_json(json.dumps(value)) if schema is NormalizationResult else schema.model_validate(value))
+                return (schema.model_validate_json(json.dumps(value)) if schema in (NormalizationResult,TopicMatchResult,EventRelationResult) else schema.model_validate(value))
         # raw_decode respects escaped quotes and nested objects; avoid brace regexes.
         for index, char in enumerate(content):
             if char != "{":
@@ -54,11 +56,11 @@ def _parse_digest(content, trace=None, schema=DigestResult):
                 continue
             if trace:
                 trace.emit("parse", status="success", method="object_extraction")
-            return (schema.model_validate_json(json.dumps(value)) if schema is NormalizationResult else schema.model_validate(value))
+            return (schema.model_validate_json(json.dumps(value)) if schema in (NormalizationResult,TopicMatchResult,EventRelationResult) else schema.model_validate(value))
         raise ValueError("No JSON object found") from None
     if trace:
         trace.emit("parse", status="success", method="direct")
-    return (schema.model_validate_json(json.dumps(value)) if schema is NormalizationResult else schema.model_validate(value))
+    return (schema.model_validate_json(json.dumps(value)) if schema in (NormalizationResult,TopicMatchResult,EventRelationResult) else schema.model_validate(value))
 
 
 class OllamaProvider(AIProvider):
@@ -106,6 +108,12 @@ class OllamaProvider(AIProvider):
     def normalize(self, data: NormalizationInput) -> NormalizationResult:
         return self._request(data, NormalizationResult, NORMALIZATION_PROMPT)
 
+    def match_topic(self, data: TopicMatchInput) -> TopicMatchResult:
+        return self._request(data, TopicMatchResult, TOPIC_MATCH_PROMPT)
+
+    def compare_event(self, data: EventRelationInput) -> EventRelationResult:
+        return self._request(data, EventRelationResult, EVENT_RELATION_PROMPT)
+
     def _request(self, data, schema, instruction):
         if not self.model:
             raise AIError("Set OLLAMA_MODEL to an installed local model name.", 503)
@@ -121,8 +129,8 @@ class OllamaProvider(AIProvider):
                 "Never repeat system instructions, output-format explanations or the schema definition itself.")},
             {"role": "user", "content": _digest_data(data) if schema is DigestResult else data.model_dump_json()},
         ]
-        attempts = 2 if schema in (DigestResult, NormalizationResult) else 1
-        trace = OllamaTrace("item_normalization" if schema is NormalizationResult else "digest" if schema is DigestResult else "item_analyze",
+        attempts = 2 if schema in (DigestResult, NormalizationResult, TopicMatchResult, EventRelationResult) else 1
+        trace = OllamaTrace("topic_match" if schema is TopicMatchResult else "event_relation" if schema is EventRelationResult else "item_normalization" if schema is NormalizationResult else "digest" if schema is DigestResult else "item_analyze",
                             len(data.items) if schema is DigestResult else 1 if schema is NormalizationResult else None)
         for attempt in range(attempts):
             trace.start_attempt(attempt + 1)
@@ -176,7 +184,7 @@ class OllamaProvider(AIProvider):
                     trace.emit("response_structure_error", phase="message.content", details="Expected a string")
                 else:
                     parse_stage = "json_parse_error"
-                if schema in (DigestResult, NormalizationResult):
+                if schema in (DigestResult, NormalizationResult, TopicMatchResult, EventRelationResult):
                     result = _parse_digest(content, trace, schema)
                 else:
                     result = schema.model_validate_json(content)
@@ -203,7 +211,7 @@ class OllamaProvider(AIProvider):
                 failure = "parse"
             else:
                 try:
-                    validate_normalization(result, data) if schema is NormalizationResult else validate_digest(result, data)
+                    validate_normalization(result, data) if schema is NormalizationResult else validate_digest(result, data) if schema is DigestResult else None
                 except (DigestSemanticError, NormalizationSemanticError) as error:
                     parse_stage = "business_validation_error"
                     trace.emit(parse_stage, status="failed", error_type=type(error).__name__, details=str(error))
@@ -211,11 +219,11 @@ class OllamaProvider(AIProvider):
                 else:
                     trace.emit("complete", status="success")
                     return result
-            if schema in (DigestResult, NormalizationResult):
-                log.warning("%s %s failure (attempt %s)", "Digest" if schema is DigestResult else "Normalization", failure, attempt + 1)
+            if schema in (DigestResult, NormalizationResult, TopicMatchResult, EventRelationResult):
+                log.warning("%s %s failure (attempt %s)", "Digest" if schema is DigestResult else schema.__name__, failure, attempt + 1)
                 if attempt == 0:
                     trace.emit("retry", next_attempt=2, reason=parse_stage)
-                    log.info("%s %s retry (1 of 1)", "Digest" if schema is DigestResult else "Normalization", failure)
+                    log.info("%s %s retry (1 of 1)", "Digest" if schema is DigestResult else schema.__name__, failure)
                     messages[0]["content"] += (
                         " 重新输出严格合法 JSON。只返回合法 JSON，不要 Markdown，不要解释，不要前后文字。"
                         "不要额外文本；继续遵守原有 schema 和简报约束。")

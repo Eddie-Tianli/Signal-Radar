@@ -6,6 +6,10 @@ v0.2.0 本地候选版本；未创建发布 Tag。
 
 ### Added
 
+- Task B：独立 TopicMatcher / EventResolver，事件多来源、多主题关联、增量与冲突记录及中文事件列表/详情。
+- Alembic 0008 新增事件、匹配审计、来源、更新、主题关联与通知候选表，0009保存历史Topic配置快照；新写入 URL 指纹去重，旧数据保留。
+- 默认关闭的事件自动阶段，与手动共用服务；持久化通知领取、规则复核与重复提醒抑制，离线 HTTP 演示脚本。
+
 - Task A：独立 TextPreprocessor、NormalizationService 与单条中文简讯，提取实体、关键词、事件日期及保守来源声称。
 - Alembic 0007 新增 item_normalizations，支持按输入指纹/schema 幂等、失败重试和显式新修订，不覆盖原文。
 - 单条/Topic 批量规范化 API、原文与 AI 简讯分区、来源追溯及 metadata-only 提示；复用 Ollama JSON Schema、Trace 与最多一次重试。

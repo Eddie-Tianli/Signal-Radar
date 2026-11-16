@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import Session
 from app.collection.source import SourceAdapter
 from app.collection.query import build_queries
@@ -9,6 +9,7 @@ from app.collection.youtube import SourceError
 from app.items.schemas import ItemCreate
 from app.items.models import ItemRecord
 from app.items.service import ItemService
+from app.events.identity import url_key
 from app.topics.models import TopicRecord
 
 log = logging.getLogger("uvicorn.error")
@@ -22,6 +23,7 @@ class ScanResult(BaseModel):
     duplicates: int
     queries: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    item_ids: list[int] = Field(default_factory=list)
 
 
 class CollectionService:
@@ -57,9 +59,14 @@ class CollectionService:
             log.warning("Topic %s statistics unavailable (%s); raw Items retained", topic_id, type(error).__name__)
         items = ItemService(self.session)
         created = 0
+        discovered_ids = []
         try:
             for result in unique:
                 created += items.insert_if_new(ItemCreate(topic_id=topic.id, **result.model_dump()))
+                discovered = self.session.scalar(select(ItemRecord.id).where(or_(
+                    and_(ItemRecord.source==result.source,ItemRecord.external_id==result.external_id),
+                    ItemRecord.canonical_url_hash==url_key(result.url),ItemRecord.url==result.url)).order_by(ItemRecord.id).limit(1))
+                if discovered is not None:discovered_ids.append(discovered)
                 if result.popularity_metrics is not None:
                     record = self.session.scalar(select(ItemRecord).where(ItemRecord.topic_id == topic_id,
                         ItemRecord.source == result.source, ItemRecord.external_id == result.external_id))
@@ -71,4 +78,4 @@ class CollectionService:
             self.session.rollback()
             raise
         return ScanResult(topic_id=topic_id, source=self.source.name, fetched=len(results), created=created,
-                          duplicates=len(results) - created, queries=list(topic.last_queries), warnings=warnings)
+                          duplicates=len(results) - created, queries=list(topic.last_queries), warnings=warnings,item_ids=list(dict.fromkeys(discovered_ids)))

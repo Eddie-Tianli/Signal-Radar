@@ -14,6 +14,7 @@ from app.digests.service import DigestService, NoRelevantItems
 from app.items.models import ItemRecord
 from app.topics.models import TopicRecord
 from app.topics.policy import pending_condition
+from app.events.pipeline import EventPipeline,event_processing_enabled
 
 
 log = logging.getLogger("uvicorn.error")
@@ -22,7 +23,7 @@ log = logging.getLogger("uvicorn.error")
 class UpdateProgress(BaseModel):
     topic_id: int
     status: Literal["running", "completed", "partial", "failed"] = "running"
-    stage: Literal["scan", "analyze", "digest", "complete"] = "scan"
+    stage: Literal["scan", "analyze", "events", "digest", "complete"] = "scan"
     completed_steps: list[str] = Field(default_factory=list)
     fetched: int = 0
     created: int = 0
@@ -37,6 +38,10 @@ class UpdateProgress(BaseModel):
     pending_remaining: int = 0
     digest: DigestRead | None = None
     digest_skipped: str | None = None
+    event_mode: bool = False
+    events_processed: int = 0
+    event_relations: dict[str,int] = Field(default_factory=dict)
+    event_failed: int = 0
     error: str | None = None
     failed_stage: str | None = None
 
@@ -50,7 +55,7 @@ class TopicUpdateService:
         topic = self.session.get(TopicRecord, topic_id)
         if topic is None:
             raise LookupError("Topic not found")
-        progress = UpdateProgress(topic_id=topic_id)
+        progress = UpdateProgress(topic_id=topic_id,event_mode=event_processing_enabled())
         try:
             yield progress.model_copy(deep=True)
             scan = CollectionService(self.session, self.source).scan(topic_id)
@@ -85,6 +90,19 @@ class TopicUpdateService:
             progress.pending_remaining = self.session.scalar(select(func.count(ItemRecord.id)).where(
                 ItemRecord.topic_id == topic_id, ItemRecord.deleted_at.is_(None), pending_condition(topic)))
             progress.completed_steps.append("analyze")
+            if progress.event_mode and not analysis_unavailable and not stop.is_set():
+                progress.stage = "events"
+                yield progress.model_copy(deep=True)
+                event_result=EventPipeline(self.session,self.provider).process_topic(topic_id,3,stop,item_ids=scan.item_ids)
+                progress.events_processed=event_result["processed"]
+                progress.event_failed=event_result["failed"]
+                for item_result in event_result["results"]:
+                    relation=(item_result["decision"] or {}).get("relation","uncertain")
+                    progress.event_relations[relation]=progress.event_relations.get(relation,0)+1
+                if progress.event_failed:
+                    progress.warnings.append("部分事件处理未完成，原始内容与既有分析保留，可重试。")
+                progress.completed_steps.append("events")
+                yield progress.model_copy(deep=True)
             progress.stage = "digest"
             digest_service = DigestService(self.session, self.provider)
             if not analysis_unavailable and not stop.is_set() and digest_service.needs_generation(topic_id):
@@ -98,7 +116,7 @@ class TopicUpdateService:
             else:
                 progress.digest_skipped = "analysis_unavailable" if analysis_unavailable else "stopped" if stop.is_set() else "no_new_relevant"
             progress.stage = "complete"
-            progress.status = "partial" if progress.failed or progress.pending_remaining or stop.is_set() else "completed"
+            progress.status = "partial" if progress.event_failed or progress.failed or progress.pending_remaining or stop.is_set() else "completed"
         except (SourceError, AIError) as error:
             self.session.rollback()
             log.warning("Topic %s update failed at %s (%s)", topic_id, progress.stage, type(error).__name__)

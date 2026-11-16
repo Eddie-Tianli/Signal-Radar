@@ -83,7 +83,7 @@ def test_source_external_id_unique_across_topics(engine):
             session.commit()
         session.rollback()
         session.add(ItemRecord(**item_data(source="youtube")))
-        session.add(ItemRecord(**item_data(external_id="entry-2")))
+        session.add(ItemRecord(**item_data(external_id="entry-2",url="https://example.com/article-2")))
         session.commit()
         assert session.query(ItemRecord).count() == 3
 
@@ -112,7 +112,7 @@ def test_topic_deletion_cascades(engine):
 def test_migration_head_and_downgrade_preserve_topics(engine):
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
         assert "items" in inspect(connection).get_table_names()
         assert connection.scalar(text("SELECT name FROM topics WHERE id=1")) == "Existing topic"
         config.attributes["connection"] = connection
@@ -138,7 +138,7 @@ def test_service_create_query_and_relationship(engine):
     with Session(engine) as session:
         service = ItemService(session)
         first = service.create_item(ItemCreate(**item_data()))
-        second = service.create_item(ItemCreate(**item_data(external_id="entry-2")))
+        second = service.create_item(ItemCreate(**item_data(external_id="entry-2",url="https://example.com/article-2")))
         assert service.list_topic_items(1) == [first, second]
         assert service.list_topic_items(999) == []
         topic = session.get(TopicRecord, 1)

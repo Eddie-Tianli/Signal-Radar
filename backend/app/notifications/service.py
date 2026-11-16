@@ -22,7 +22,14 @@ class WindowsNotificationService(NotificationService):
         if sys.platform != "win32":
             raise RuntimeError("Windows notifications require an interactive Windows session")
         # Data goes through stdin JSON, never interpolated into PowerShell source.
-        payload = json.dumps({"topic": topic_name[:160], "count": relevant_count})
+        self._send_payload({"topic": topic_name[:160], "count": relevant_count})
+
+    def send_event(self, topic_name: str, event_title: str, update_type: str) -> None:
+        label = "新事件" if update_type=="new_event" else "事件有重要进展"
+        self._send_payload({"topic":topic_name[:160],"message":f"{label}：{event_title[:240]}。来源声称，尚未独立核验。"})
+
+    def _send_payload(self, data):
+        payload = json.dumps(data)
         script = Path(__file__).with_name("toast.ps1")
         powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
         subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-File", str(script)],

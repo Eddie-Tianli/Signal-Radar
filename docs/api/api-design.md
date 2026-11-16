@@ -136,3 +136,22 @@ topics 增加 analysis_state / analysis_counts / last_analysis_at / last_queries
 状态：未处理 GET null；处理中 processing；完成 completed；失败 failed/error。模型输出字段缺失、类型错误、事实/语言检查失败返回安全502；服务不可用503；超时504；Topic 忙409；参数错误422。单条失败后 GET 可检查持久化状态。批量部分失败返回计数，不伪造成功。
 
 同一单条输出 schema：`{headline,summary,entities,event_type,event_date,keywords,claims:[{text,status}],warnings}`。headline/summary 中文，summary 一般100–250字，信息不足可缩短，schema 上限1000字符防过长。event_date ISO YYYY-MM-DD 或null。示例与实际 Prompt 见 Task A 记录。没有改动既有 Analyze / Scan / Digest response contract。
+
+
+## Task B：事件与匹配 API（增量接口，旧Analyze/Digest不变）
+
+- `POST /api/items/{id}/resolve?topic_id=1&retry=false`：先复用/生成当前规范化结果，再匹配指定Topic并识别事件；省略topic_id时最多匹配50个enabled Topic。retry=true只重试uncertain/失败，成功关系不会重复生成Event/Update。正常UI只匹配当前Topic，减少模型调用。
+- `POST /api/topics/{id}/resolve?limit=3`：逐条补充该Topic采集归属的旧内容，默认3、范围1–10；已完成缓存不占模型处理额度；uncertain保留待复核，需单条retry。
+- `GET /api/items/{id}/event-processing`：当前规范化版本下的匹配和关系审计；未规范化为null，404表示Item不存在/已入回收站。complete只表示处理完成，不代表matched或已核实。
+- `GET /api/events?topic_id=1&limit=50`：最近事件（最多100），按updated_at/id倒序，Topic筛选仅当前规则的有效匹配。
+- `GET /api/events/{id}`：摘要、事件时间、事实状态、来源、增量历史、候选与判断理由、AI参与、通知记录。
+
+单条resolve返回 `{item_id,normalized_item_id,matches,decision,notification_candidates}`。matches含match_status/relevance_score/matched_rules/exclusion_reason/match_reason/ai_used/processing_status；decision含relation/candidate_ids/event_id/reason/ai_used/evidence/attempts/processing_status。relation为new_event/duplicate_report/event_update/uncertain，不确定不强行关联。
+
+事件列表字段：id/canonical_title/event_type/event_date/summary/primary_entities/event_status/created_at/updated_at/source_count/topics。详情新增facts/sources/updates/decisions/notifications；source_count按规范化原始URL去重，源文章多个规范化修订不虚增链接数。历史来源快照不因Raw永久删除而丢失。
+
+匹配/关系服务不可用503、超时504、结构化核验失败502；原始Item不丢。Topic或全局事件忙409、参数422、不存在404。没有通知重发API，sending/failed不自动再发，防止未知结果重复弹窗。
+
+一键更新NDJSON新增可选events阶段及event_mode/events_processed/event_relations/event_failed；开关false保留旧步骤。digest contract不变，Task C未实现。
+
+ScanResult新增 item_ids（实际发现、含已存在的Item ID），旧字段保留，供跨Topic事件复用；不会复制Raw所属关系。Topic匹配结果新增topic_snapshot，Event详情topic_matches展示当时配置、规范化ID与stale，未匹配结果仍可从Item处理状态查看。

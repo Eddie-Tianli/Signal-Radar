@@ -1,9 +1,10 @@
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.items.models import ItemRecord
 from app.items.schemas import Item, ItemCreate
+from app.events.identity import url_key
 
 
 class ItemService:
@@ -15,7 +16,9 @@ class ItemService:
     def create_item(self, data: ItemCreate) -> Item:
         # Revalidate even if a caller constructed or modified a schema manually.
         validated = ItemCreate.model_validate(data.model_dump())
-        record = ItemRecord(**validated.model_dump())
+        if self.session.scalar(select(ItemRecord.id).where(or_(ItemRecord.url==validated.url,ItemRecord.canonical_url_hash==url_key(validated.url))).limit(1)) is not None:
+            raise IntegrityError("Item URL already exists",{},ValueError("Duplicate Item URL"))
+        record = ItemRecord(**validated.model_dump(), canonical_url_hash=url_key(validated.url))
         self.session.add(record)
         try:
             self.session.commit()
@@ -38,9 +41,9 @@ class ItemService:
         else:
             from sqlalchemy.dialects.sqlite import insert
         validated = ItemCreate.model_validate(data.model_dump())
-        statement = insert(ItemRecord).values(**validated.model_dump()).on_conflict_do_nothing(
-            index_elements=["source", "external_id"]
-        ).returning(ItemRecord.id)
+        if self.session.scalar(select(ItemRecord.id).where(or_(ItemRecord.canonical_url_hash==url_key(validated.url), ItemRecord.url==validated.url)).limit(1)) is not None:
+            return False
+        statement = insert(ItemRecord).values(**validated.model_dump(), canonical_url_hash=url_key(validated.url)).on_conflict_do_nothing().returning(ItemRecord.id)
         return self.session.execute(statement).scalar_one_or_none() is not None
 
     def list_recent_topic_items(self, topic_id: int) -> list[Item]:
