@@ -17,6 +17,7 @@ from app.workflows.locks import TopicBusy
 from app.trash.router import router as trash_router
 from app.normalization.router import router as normalization_router
 from app.events.router import router as events_router
+from app.briefs.router import router as reading_router
 
 
 app = FastAPI(title="SignalRadar API", version="0.2.0", lifespan=lifespan)
@@ -35,6 +36,7 @@ app.include_router(updates_router)
 app.include_router(trash_router)
 app.include_router(normalization_router)
 app.include_router(events_router)
+app.include_router(reading_router)
 
 
 @app.exception_handler(TopicBusy)

@@ -34,3 +34,7 @@ def topic_operation(topic_id):
         yield
     finally:
         release_topic(topic_id, token)
+
+
+def topic_active(topic_id):
+    with _guard:return topic_id in _active

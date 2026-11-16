@@ -198,7 +198,7 @@ def test_api_get_post_batch_and_404(scan_client):
 
 def test_migration_preserves_existing_data(engine):
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version"))=="0009"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version"))=="0010"
         assert connection.scalar(text("SELECT count(*) FROM topics"))==1
         config=Config(str(Path(__file__).resolve().parents[1]/"alembic.ini"));config.attributes["connection"]=connection
         command.check(config)

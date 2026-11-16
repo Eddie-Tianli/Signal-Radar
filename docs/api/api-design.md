@@ -155,3 +155,27 @@ topics 增加 analysis_state / analysis_counts / last_analysis_at / last_queries
 一键更新NDJSON新增可选events阶段及event_mode/events_processed/event_relations/event_failed；开关false保留旧步骤。digest contract不变，Task C未实现。
 
 ScanResult新增 item_ids（实际发现、含已存在的Item ID），旧字段保留，供跨Topic事件复用；不会复制Raw所属关系。Topic匹配结果新增topic_snapshot，Event详情topic_matches展示当时配置、规范化ID与stale，未匹配结果仍可从Item处理状态查看。
+
+
+## Task C：事件简讯和阅读 API（当前）
+
+既有 Topic / Item / Event / 旧 Analyze 与历史 Digest 接口保留。以下接口不调用新来源：
+
+| Method / endpoint | 行为 |
+| --- | --- |
+| GET /api/events/{event_id}/brief | 最新简讯；Event 存在但没有简讯返回 null，不存在返回404 |
+| POST /api/events/{event_id}/brief?force=false | 生成或复用；force=true 保留新版本并重试；忙碌409；模型失败返回明确 fallback，而非假装 AI 成功 |
+| GET /api/events/{event_id}/brief-history | 新版本在前，含来源、事实、核实/生成状态、模型、已读状态 |
+| GET /api/feed?mode=focus&topic_id=1&sort=latest&limit=20 | 精准关注；sort=latest/relevance/popularity/updated，limit 1～50 |
+| GET /api/feed?mode=discover&limit=20 | 开放发现；不得同时传 topic_id（422），不修改 Topic 配置 |
+| POST /api/briefs/{brief_id}/read | 将最新已完成版本标为已读；不存在404，processing返回409 |
+| GET /api/topics/{topic_id}/reading-status | 最近一次持久化运行记录；没有运行返回 null，含active进程锁状态 |
+| GET /api/reading-overview | recent_briefs / discovery / review_count / event_count / brief_count / scope，只读 |
+
+`POST /api/topics/{topic_id}/digest` 现使用 ReportService，从当前有效 Brief 生成；保留旧响应字段，新增 result_kind、generation_status、generation_error、model_name、run_stats、briefs。可选参数 since / until（带时区 ISO datetime）、event_status=active/developing/closed、force=false。force=true 显式重新综合已覆盖事件，但不绕过 TopicMatch。范围倒置422，Topic不存在404，数据库故障503。
+
+返回 result_kind=digest / brief_collection / no_updates；历史行 legacy。简讯集合是可读降级，不是 AI 综合成功；没有新内容时不调用模型。历史通过原 `GET /api/topics/{topic_id}/digests` 读取，回收站行为保留。
+
+`POST /api/topics/{topic_id}/update` 继续 NDJSON；新增 normalize / match / events / brief 阶段，保留原有字段并增加 run_id / briefs_generated / brief_fallbacks。HTTP 流已开始后，失败在最终事件 status/error/failed_stage 中体现，不能只看 HTTP 200。scan成功但待处理/失败尚存时为partial，不能伪造 no_updates。运行统计只包括实际发现和处理的内容，已移入回收站的记录不重新分析。
+
+Brief 的 facts/sources 由程序绑定，不接受模型自造来源。`sources` 为生成时快照，`current_sources` 为最新已收集来源；历史快照不随实时链接改变。Digest.briefs 固化对应版本；旧摘要字段仍可读，但新报告不再读取原始 snippet 或 legacy ai_summary 作为综合输入。

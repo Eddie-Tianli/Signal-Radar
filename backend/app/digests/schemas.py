@@ -46,3 +46,10 @@ class DigestRead(BaseModel):
     item_count: int
     generated_at: datetime
     sources: list[DigestSource] | None = None
+
+    result_kind: str = "legacy"
+    generation_status: str = "completed"
+    generation_error: str | None = None
+    model_name: str | None = None
+    run_stats: dict | None = None
+    briefs: list[dict] = Field(default_factory=list)

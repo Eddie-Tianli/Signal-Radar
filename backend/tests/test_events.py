@@ -249,7 +249,7 @@ def test_api_event_list_detail_and_reuse(scan_client):
 
 def test_event_migration_preserves_task_a(engine):
     with engine.begin() as conn:
-        assert conn.scalar(text("SELECT version_num FROM alembic_version"))=="0009"
+        assert conn.scalar(text("SELECT version_num FROM alembic_version"))=="0010"
         config=Config(str(Path(__file__).resolve().parents[1]/"alembic.ini"));config.attributes["connection"]=conn
         command.check(config);command.downgrade(config,"0007")
         assert conn.scalar(text("SELECT count(*) FROM topics"))==1

@@ -1,10 +1,11 @@
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.digests.models import DigestRecord
 from app.notifications.service import NotificationService, WindowsNotificationService, get_notification_service
 from app.scheduler.runner import run_cycle
 from test_items import engine
-from test_digests import FakeAI
+from test_reading import ReadingAI as FakeAI
 from test_scheduler import factory
 
 
@@ -22,9 +23,9 @@ def test_new_relevance_and_digest_notify_once(engine):
     notifier = FakeNotification()
     resources = factory(engine, FakeAI())
     run_cycle(resources, notification_factory=lambda: notifier)
-    assert notifier.calls == [("Existing topic", 3)]
+    assert notifier.calls == [("Existing topic",1)]*2
     run_cycle(resources, notification_factory=lambda: notifier)
-    assert len(notifier.calls) == 1
+    assert len(notifier.calls) == 2
 
 
 def test_no_relevant_no_notification(engine):
@@ -58,9 +59,14 @@ def test_notification_failure_preserves_success(engine, caplog):
     assert "SECRET" not in caplog.text
 
 
-def test_failed_digest_does_not_notify(engine):
+def test_failed_digest_does_not_suppress_event_notifications(engine):
     provider = FakeAI()
     provider.fail = True
     notifier = FakeNotification()
     run_cycle(factory(engine, provider), notification_factory=lambda: notifier)
-    assert notifier.calls == []
+    assert len(notifier.calls)==2
+
+
+@pytest.fixture(autouse=True)
+def enable_reading_pipeline(monkeypatch):
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED","true")

@@ -2,7 +2,7 @@
 
 ## 已实现存储
 
-PostgreSQL 通过 SQLAlchemy 保存 Topic、Item 和 Digest。Alembic `0001` 创建 topics，`0002_create_items.py` 创建 items，`0003_item_ai_analysis.py` 增加 nullable AI 字段，`0004_create_digests.py` 增加简报历史。`0005_content_recycle_bin.py` 为 items 和 digests 增加 deleted_at 与索引。`0006_intent_pipeline.py` 增加自然语言规则和分析流水线字段。当前 head 为 `0006`，已应用 migration 保持不变。
+PostgreSQL 通过 SQLAlchemy 保存 Topic、Item 和 Digest。Alembic `0001` 创建 topics，`0002_create_items.py` 创建 items，`0003_item_ai_analysis.py` 增加 nullable AI 字段，`0004_create_digests.py` 增加简报历史。`0005_content_recycle_bin.py` 为 items 和 digests 增加 deleted_at 与索引。`0006_intent_pipeline.py` 增加自然语言规则和分析流水线字段。当前 head 为 `0010`，已应用 migration 保持不变。
 
 ## topics
 
@@ -194,3 +194,29 @@ Raw Item仍有一个采集归属Topic；NormalizedItem通过topic_matches可用�
 升级前本机备份，upgrade head/current/check；downgrade0007会丢失Task B表与URL指纹，仅用于隔离迁移测试，不用于日常操作。
 
 0009 为 topic_matches 增加 nullable JSON topic_snapshot，保留当时的名称、描述、规则、阈值、别名与策略版本。旧记录允许null；新判断均保存快照，改规则后仍可解释历史。0008只建事件表，0009为增量字段，均不改写原有Raw/AI/Digest。
+
+
+## Task C：Brief 与报告持久化（0010）
+
+```text
+Event 1 ── 1 Brief 1 ── N BriefVersion
+Digest 1 ── N DigestBrief ── 1 BriefVersion
+Topic 1 ── N ReadingRun
+Event 1 ── 0..1 EventRead
+```
+
+`0010_reading_workspace.py` 为增量 migration，保留现有 Item、Event、EventUpdate、Digest 和回收站。新增：
+
+| 表 | 主要字段和约束 |
+| --- | --- |
+| briefs | id PK、event_id UNIQUE FK events（CASCADE）、created_at timestamptz |
+| brief_versions | id PK、brief_id FK、version，UNIQUE(brief_id, version)；content_fingerprint、last_update_id、title、summary、facts/sources/warnings JSON、verification_status、generation_status CHECK(processing/completed/fallback)、model_name、error、generated_at timestamptz |
+| digest_briefs | digest_id FK（CASCADE）、brief_version_id / event_id FK（SET NULL）、coverage_fingerprint、snapshot JSON；UNIQUE(digest_id, event_id) |
+| reading_runs | topic_id FK（CASCADE）、status、stage、stats JSON、error、report_id FK（SET NULL）、started_at / finished_at timestamptz |
+| event_reads | event_id PK/FK、brief_version_id FK（SET NULL）、read_at timestamptz；记录已读版本，新版本重新视为未读 |
+
+`digests` 增加 result_kind、generation_status、generation_error、model_name、run_stats JSON。旧行默认 result_kind=legacy，旧 title/summary/sources 不被重写；新行区分 digest / brief_collection / no_updates。item_count 仍表示实际来源 Item 数，事件数量从 briefs 快照获得，不改写旧含义。DigestBrief 固化事件、版本和来源内容，即使后来增加来源或重生成 Brief，历史报告仍可追溯。
+
+Brief 的 verification_status 当前只有 unverified / conflicting，不能当作事实已核验。Brief.sources 是生成时快照，读取最新简讯可附 current_sources 显示新增报道；旧版本保持自己的来源快照。覆盖指纹用于报告增量选择，不将纯措辞重生成视为新事实。
+
+迁移前停止写入并备份；本次本机已执行 pg_dump 自定义格式备份并检查 TOC，然后 upgrade head/current/check。数据库保存 UTC 时间，前端统一按 Asia/Shanghai 展示；SQLite 离线验收丢失时区的值按 UTC 解释。已有 migration 不改写，不通过降级删除历史来运行旧程序。

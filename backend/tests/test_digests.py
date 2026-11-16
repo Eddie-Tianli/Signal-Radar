@@ -99,7 +99,7 @@ def test_digest_api(scan_client):
     try:
         topic = client.post("/api/topics", json={"name": "Example"}).json()["id"]
         path = f"/api/topics/{topic}"
-        assert client.post(path + "/digest").status_code == 409
+        assert client.post(path + "/digest").json()["result_kind"]=="no_updates"
         assert provider.inputs == []
         assert client.post("/api/topics/999/digest").status_code == 404
         assert client.get("/api/topics/999/digests").status_code == 404
@@ -110,7 +110,8 @@ def test_digest_api(scan_client):
         assert client.get(path + "/digests").json() == [created.json()]
         provider.fail = True
         failed = client.post(path + "/digest")
-        assert failed.status_code == 503 and failed.json()["detail"] == "Local model unavailable"
+        assert failed.status_code==200 and failed.json()["result_kind"]=="no_updates"
+        assert provider.inputs==[]  # legacy Item summaries are not new Event Briefs
     finally:
         app.dependency_overrides.pop(get_ai_provider, None)
 

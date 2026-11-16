@@ -13,7 +13,7 @@
 .\start-signalradar.ps1
 ```
 
-脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration 0006、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
+脚本检查虚拟环境、.env、node_modules、Node/npm、数据库连通性、migration head（当前0010）、8000/3000 端口和本地 Ollama /api/tags。随后构建 Next.js，运行生产前端及单进程后端。只有构建与当前代码一致时才使用 -SkipBuild。脚本不会自动安装依赖、迁移数据库、启动 PostgreSQL / Ollama 或修改 Windows 配置。若执行策略阻止脚本，按本机允许的方式处理；脚本不会自行修改执行策略。
 
 Ollama 离线会记录 `Ollama unavailable - AI analysis will fail until Ollama is started.`，应用仍能启动。数据库或必需文件缺失则阻止启动并提示处理方式。访问 http://localhost:3000 和 http://127.0.0.1:8000/api/status。后者保留 name/version/status，增加 database、ollama、scheduler、notifications；available 只表示 Ollama API 响应，不保证 OLLAMA_MODEL 已配置和安装。
 
@@ -53,7 +53,7 @@ MockSource 不创建 HTTP 客户端；前端只请求本地后端，后端连接
 1. 启动 Ollama；尚未运行时可执行 `ollama serve`。
 2. 使用 `ollama list` 获取已安装模型的完整名称；用 `Invoke-RestMethod http://localhost:11434/api/tags` 检查服务。
 3. 设置 OLLAMA_BASE_URL=http://localhost:11434、OLLAMA_MODEL 为实际模型名称，USE_MOCK_SOURCE=true。不会自动下载模型；修改后重启。
-4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0006 head）。
+4. 激活后端虚拟环境，执行 `python -m alembic upgrade head`、`python -m alembic current`（0010 head）。
 5. 创建 Topic 并扫描，在内容卡片点击“分析”，或“分析未处理内容”。先少量测试，本地模型可能较慢，单次后端调用超时为 180 秒。
 6. 查看相关性、评分、分类、AI 摘要和分析时间；刷新后仍应存在。
 
@@ -80,7 +80,7 @@ backend/logs/ollama_trace.jsonl
 D:\Projects_ltl\Signal-Radar\backend\logs\ollama_trace.jsonl
 ```
 
-目录自动创建且被 Git 忽略。每行是一条 UTF-8 JSON 事件，包含 UTC 时间戳、stage（item_analyze / digest）、attempt、request_id、call_id 和 parent_request_id。每次 HTTP 尝试有独立 request_id；一次业务调用及其重试共享 call_id，第二次的 parent_request_id 指向第一次。Digest 事件还包含本次 item_count。
+目录自动创建且被 Git 忽略。每行是一条 UTF-8 JSON 事件，包含 UTC 时间戳、stage（item_analyze / digest / item_normalization / topic_match / event_relation / event_brief / brief_digest）、attempt、request_id、call_id 和 parent_request_id。每次 HTTP 尝试有独立 request_id；一次业务调用及其重试共享 call_id，第二次的 parent_request_id 指向第一次。Digest 事件还包含本次 item_count。
 
 | event | 用途 |
 | --- | --- |
@@ -102,7 +102,7 @@ D:\Projects_ltl\Signal-Radar\backend\logs\ollama_trace.jsonl
 ```powershell
 $tracePath = '.\backend\logs\ollama_trace.jsonl'
 $events = Get-Content -LiteralPath $tracePath -Encoding utf8 | ForEach-Object { $_ | ConvertFrom-Json }
-$latest = $events | Where-Object { $_.stage -eq 'digest' -and $_.event -eq 'request' } | Select-Object -Last 1
+$latest = $events | Where-Object { $_.stage -in @('digest','brief_digest') -and $_.event -eq 'request' } | Select-Object -Last 1
 $events | Where-Object { $_.call_id -eq $latest.call_id } | Select-Object timestamp, request_id, attempt, event
 $events | Where-Object { $_.call_id -eq $latest.call_id } | ConvertTo-Json -Depth 100
 ```
@@ -126,7 +126,7 @@ $attemptEvents | Where-Object { $_.event -match 'error|failed|retry' } | Convert
 ## Digest 与自动任务
 
 1. 设置 USE_MOCK_SOURCE=true、SCHEDULER_ENABLED=false，启动已配置模型的 Ollama。
-2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0006 head。
+2. 执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，确认 0010 head。
 3. 启动前后端，创建 Topic，点击“扫描”和“分析”。
 4. 至少一条内容需被判断为相关，否则“生成简报”返回 409；全部不相关也可能是正常模型判断。
 5. 点击“生成简报”，检查 AI 标记、标题、引用数、时间和摘要；“查看历史简报”读取保存的快照。
@@ -258,7 +258,7 @@ npm run build
 
 ## 回收站验证
 
-先停止旧后端并执行 `python -m alembic upgrade head`，确认 `alembic current` 为 `0006 (head)` 且 `alembic check` 无差异，然后启动应用。
+先停止旧后端并执行 `python -m alembic upgrade head`，确认 `alembic current` 为 `0010 (head)` 且 `alembic check` 无差异，然后启动应用。
 
 1. 使用 MockSource 采集并分析，生成一条简报。
 2. 对 Item 点击“移入回收站”，确认默认列表和首页计数减少；再次扫描不重新出现。
@@ -280,7 +280,7 @@ npm run build
 
 1. 保留现有 `.env`，先关闭 Scheduler 和通知。停止旧 SignalRadar 进程，确认 PostgreSQL / Ollama 已运行。
 2. 使用与数据库版本匹配的 `pg_dump -Fc` 保存到本机私有目录，并用 `pg_restore --list` 校验。不要把备份或密码放进公开仓库。恢复备份会覆盖目标数据，需单独审查，不在日常验收自动执行。
-3. 在 backend 虚拟环境执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，应为 `0006 (head)` 且无差异。迁移保留原数据，新增默认 0.80、规则表、分析解释/指纹、热度和来源快照。
+3. 在 backend 虚拟环境执行 `python -m alembic upgrade head`、`python -m alembic current`、`python -m alembic check`，应为 `0010 (head)` 且无差异。迁移保留原数据，新增默认 0.80、规则表、分析解释/指纹、热度和来源快照。
 4. `USE_MOCK_SOURCE=true` 仅模拟采集；分析仍调用 `OLLAMA_MODEL` 指定的本机模型。使用现有启动脚本构建并启动，不复用旧构建。
 
 ### Topic / Item / Digest
@@ -364,8 +364,8 @@ Windows 后端测试约定保持：每次 `D:\pytest-temp` 新 GUID、`--basetem
 
 ## Task B：事件与通知验收
 
-1. 停止旧SignalRadar进程，保留.env并备份数据库。执行 `python -m alembic upgrade head` / current / check，应为 **0009 (head)** 且无差异。
-2. 默认 EVENT_PROCESSING_ENABLED=false，避免意外增加本地8B调用；手动在Item简讯下点击“识别事件”。首次会复用或生成Task A简讯。需要Ollama时先启动Ollama，MockSource不模拟AI。
+1. 停止旧SignalRadar进程，保留.env并备份数据库。执行 `python -m alembic upgrade head` / current / check，应为 **0010 (head)** 且无差异。
+2. Task C 起默认 EVENT_PROCESSING_ENABLED=true，每轮最多3条；如需只采集可显式设false；手动在Item简讯下点击“识别事件”。首次会复用或生成Task A简讯。需要Ollama时先启动Ollama，MockSource不模拟AI。
 3. 打开 `/events`，查看事件类型/日期、原始链接数、当前关联Topic、来源声称与冲突、更新历史、依据和通知状态。
 4. 可在Swagger对同一Item省略topic_id调用resolve，复用一次规范化结果匹配多个enabled Topic（最多50，建议指定Topic逐个验证）。改规则后旧匹配不自动有效，重新resolve后按当前指纹判断。
 5. 开启自动阶段：EVENT_PROCESSING_ENABLED=true，重启；一键更新与Scheduler共用EventPipeline，每轮最多3条附加事件。旧Analyze/Digest仍独立，Task B通知不依赖Digest成功，不额外发送旧Digest通知。
@@ -382,3 +382,57 @@ cd D:\Projects_ltl\Signal-Radar\backend
 使用Fake Source / Fake AI / Fake Notification与 D:\pytest-temp 下新GUID SQLite，通过真实FastAPI TestClient接口依次：创建Topic→扫描→规范化→匹配建事件→第二来源重复报道→第三来源售价进展→读取来源历史。预期一个Event、三个来源、两条Update、两次Fake通知（1→1→2），关闭/重连数据库后状态仍保留；不访问真实YouTube，不调用Ollama模型，不弹系统通知。脚本只在进程内关闭Scheduler/通知/Trace，不修改.env或正式数据库。
 
 全量测试仍每次使用新GUID basetemp与 -p no:cacheprovider，开启RUN_POSTGRES_TESTS=1覆盖PostgreSQL；前端 npm run test:api / lint / build。Fake结果不能作为真实8B语义质量保证。当前匹配依赖有限别名、时间窗口和小模型，可能漏合并或误判，来源身份无证据时待复核。详见 [Task B记录](task-b-events.md)。
+
+
+## Task C：阅读工作台本地验收
+
+当前 migration head 为 `0010`；旧版章节里的较早 head 是历史状态。新版一键更新默认 `EVENT_PROCESSING_ENABLED=true`，已有 `.env` 显式 false 不会被自动覆盖，需主动修改后重启。`DIGEST_MAX_EVENTS=10`（1～20），另受11KB AI输入预算约束。Scheduler和通知仍默认关闭。
+
+```powershell
+cd D:\Projects_ltl\Signal-Radar\backend
+.\.venv\Scripts\Activate.ps1
+python -m alembic upgrade head
+python -m alembic current
+python -m alembic check
+# backend/.env: USE_MOCK_SOURCE=true, EVENT_PROCESSING_ENABLED=true
+# 确认本地 ollama list 中的名称与 OLLAMA_MODEL 一致
+uvicorn app.main:app --reload
+# 另一个终端：
+cd D:\Projects_ltl\Signal-Radar\frontend
+npm run dev
+```
+
+1. PostgreSQL和Ollama启动后，创建Topic并执行一键更新。每轮最多3条待处理资料；查看保存阶段，积压未清空不应宣称没有新闻。先保持Scheduler关闭。
+2. 阅读精准关注的简讯和匹配理由，展开真实来源，进入事件详情检查时间线/Brief版本。重复扫描不增加相同事件版本，重要新事实保留版本历史。
+3. 至少2个有效AI完成Brief时可生成综合Digest；只有1个事件显示简讯集合。模型失败/非法输出也降级为集合，并明确不是AI综合成功。停止Ollama时采集仍可保存Raw，后续阶段失败明确显示。
+4. 无新事件且当前检查完整时查看无更新报告。断网/数据库失败应显示失败；不能拿“无新事件”掩盖错误。手动只生成报告且没有扫描，不能声称扫描完成。
+5. 进入开放发现，确认范围是已有事件库，按已读和来源多样性调整，不改变精准关注规则。标记已读后刷新仍保留；新Brief版本视为未读。
+6. “重新综合当前主题”可重试先前模型综合失败，无需重新采集或规范化；历史报告继续可读。重启后端后检查Brief、版本、报告与最近运行记录。
+7. Scheduler真实验收使用单进程、不使用reload。设置 SCHEDULER_ENABLED=true 和短测试间隔后重启；重复轮次不重复分析/生成相同事件，不重复发送已领取通知。测试后设false并重启。自动测试不弹真实Windows通知。
+
+### 完全离线演示
+
+```powershell
+cd D:\Projects_ltl\Signal-Radar\backend
+.\.venv\Scripts\python.exe scripts/demo_reading_workspace.py
+# 如需浏览器：增加 --serve（占用127.0.0.1:8000），另启动前端
+```
+
+脚本使用 D:\pytest-temp 下新的GUID SQLite数据库、Fake AI / Fake Source / Fake Notification，通过实际HTTP接口验证三种结果、网络失败、不重复通知、读取和连接重建。不会修改正式数据库、.env，不消耗YouTube配额、不弹通知。页面里的模拟事实不是新闻，Fake模型结果不代表真实Ollama质量。
+
+### Windows 自动测试约定（继续保留）
+
+```powershell
+cd D:\Projects_ltl\Signal-Radar\backend
+$env:RUN_POSTGRES_TESTS='1' # 需要本机PostgreSQL已迁移；写入包在回滚事务中
+New-Item -ItemType Directory -Path D:\pytest-temp -Force | Out-Null
+$testTempPath=Join-Path D:\pytest-temp ([guid]::NewGuid().ToString('N'))
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp $testTempPath
+Remove-Item Env:\RUN_POSTGRES_TESTS
+cd ..\frontend
+npm run test:api
+npm run lint
+npm run build
+```
+
+每次测试使用新GUID，不复用默认 pytest-of-80538 目录。权限错误先定位环境原因，不修改业务/删测试或降低覆盖率。真实模型验收应另记模型、输入范围、耗时和降级情况，不能用Fake结果冒充真实YouTube/Ollama端到端通过。

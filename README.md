@@ -1,20 +1,21 @@
 # SignalRadar v0.2.0（本地候选版本）
 
-SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具。用自然语言描述关注意图，设置包含与排除条件，再通过现有一键更新完成采集、相关性分析、有效信息筛选、信息整合和中文简报。
+SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具。用自然语言描述关注意图，设置包含与排除条件，再通过一键更新完成采集、规范化、主题匹配、事件识别、单事件简讯和中文综合简报。
 
-本版本不创建发布 Tag。实施过程及真实验收结果见 [v0.2.0 验收记录](docs/development/v0.2.0-implementation.md)。
+本版本不创建发布 Tag。Task C 的实施与验收见 [阅读工作台记录](docs/development/task-c-reading-workspace.md)；此前记录保留为历史快照。
 
 ## 当前功能
 
+- Task C 阅读工作台：事件 Brief 与历史版本、AI 综合简报 / 程序简讯集合 / 无更新报告、精准关注 / 开放发现，以及持久化运行阶段。
 - Task B 事件识别：混合 Topic 匹配、有界事件候选检索、重复报道/实质更新/待复核区分，保留来源、冲突和持久化通知状态。
-- Task A 单条规范化简讯：确定性文本清洗 → Topic 无关的事实提取 → 中文简讯与结构化字段，保留原文、版本及真实来源；默认手动触发，不增加 Scheduler 模型调用。
+- Task A 单条规范化简讯：确定性文本清洗 → Topic 无关的事实提取 → 中文简讯与结构化字段，保留原文、版本及真实来源；既可独立手动触发，也可由新版一键更新 / Scheduler 有界执行。
 - 中文 Dashboard、Topic 管理、内容筛选/排序、简报阅读及回收站。
 - Topic 支持 name、description、逐条 include / exclude 规则、0～1 阈值（默认 0.80）、enabled。
 - Query Builder 根据名称、描述与启用的包含条件提取关键词；内置 ChatGPT 模型、诺兰新电影简短模板，其他主题采用保守提取。最多 2 查询，不调用 AI 改写；不是通用自然语言翻译器。
 - YouTube Data API / MockSource 将内容统一保存为 Item；实际执行查询与最近成功扫描时间可查看。
 - Ollama 逐条输出符合度、理由、排除状态、分类和事实摘要。程序统一判定有效、无效、待复核、失败。
 - YouTube 播放/点赞/评论等真实指标单独计算热度；MockSource 与缺失指标显示未知。
-- 当前有效摘要经保守去重后生成中文 Digest，保存来源 Item ID、URL、时间和作者快照；旧版简报继续可读。
+- 当前有效 TopicMatch 对应的 Event → Brief → Digest，保存事件、简讯版本及真实来源快照；旧版简报继续可读。单条 Item Analyze 作为高级独立操作保留，不是新版 Digest 的输入。
 - 手动、一键更新和 Scheduler 复用同一逻辑；规则改变会使旧分析过期，不无条件进入新简报。
 - 可选 Windows 通知、本地启动脚本、依赖状态、标准日志及默认关闭的 Ollama Trace。
 - 单条 Item（连同 AI 结果）及 Digest 可移入回收站、恢复和二次确认永久删除。
@@ -24,14 +25,16 @@ SignalRadar 是面向 Windows 单用户本地运行的个人信息情报工具�
 Next.js + React + TypeScript + Tailwind CSS；Python + FastAPI；PostgreSQL + SQLAlchemy + Alembic；本地 Ollama。Scheduler 使用 Python 标准库，Windows 通知使用 WinRT，没有新 AI 框架或前端依赖。
 
 ```text
-Topic 描述 / 规则 / 阈值
-→ Query Builder → SourceAdapter → Raw Item → PostgreSQL
-→ AIProvider / Ollama → 符合度与排除理由
-→ 程序有效性判定 → 保守信息整合 → Final Digest
-→ PostgreSQL（来源快照）→ Frontend
+Scheduler / 一键更新
+→ Topic / Query Builder → SourceAdapter → Raw Item
+→ Text Preprocessing → NormalizedItem → TopicMatcher
+→ Event / EventUpdate → Brief / BriefVersion
+→ Digest（AI 综合 / 程序简讯集合 / 无更新报告）
+→ PostgreSQL → 精准关注 / 开放发现 / Frontend
+→ 持久化事件通知候选 → 可选 Windows Notification
 ```
 
-项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0009**。
+项目采用 monorepo：`frontend/`、`backend/`、`docs/`。版本 **0.2.0**，Alembic head **0010**。
 
 ## 本地安装与启动
 
@@ -54,7 +57,7 @@ cd ..
 .\start-signalradar.ps1
 ```
 
-已有项目无需重建虚拟环境。升级前停止旧进程并备份数据库，应用 `0006_intent_pipeline.py`。迁移只增加字段和表；旧 Raw Item、AI 结果与 Digest 均保留，旧分析标为待重新确认。不要用降级来启动旧代码。
+已有项目无需重建虚拟环境。升级前停止旧进程并备份数据库，应用到最新 head（本次新增 `0010_reading_workspace.py`）。迁移只增加字段和表；旧 Raw Item、AI 结果与 Digest 均保留，旧分析标为待重新确认。不要用降级来启动旧代码。
 
 访问 http://localhost:3000；Swagger：http://127.0.0.1:8000/docs。保持终端打开，Ctrl+C 正常停止。脚本构建生产前端并启动单进程后端；只有构建与源码一致时才用 `-SkipBuild`。脚本不会修改系统配置或重复启动 PostgreSQL / Ollama。数据库账户配置见 [后端说明](backend/README.md)。
 
@@ -72,7 +75,8 @@ cd ..
 | OLLAMA_MODEL | `ollama list` 中的完整模型名称，例如本机 `deepseek-r1:8b` |
 | OLLAMA_NO_THINK_HINT | false；可选 `/no_think` 兼容提示，仅适用于支持该提示的模型，不保证停止 thinking |
 | OLLAMA_TRACE_ENABLED | false；显式开启才保存完整 Prompt 和模型回复 |
-| EVENT_PROCESSING_ENABLED | false；开启后一键更新/Scheduler 每轮额外处理最多3条事件，使用事件级通知去重 |
+| EVENT_PROCESSING_ENABLED | true；新版一键更新/Scheduler 每轮最多处理3条待处理事件资料；显式 false 为仅采集调试模式，不伪报无更新 |
+| DIGEST_MAX_EVENTS | 10；范围1～20，另有11KB AI 输入预算；超预算保留完整简讯集合 |
 | SCHEDULER_ENABLED | false；是否自动更新 enabled Topic |
 | SCAN_INTERVAL_MINUTES | 60；0.1～10080 分钟 |
 | NOTIFICATIONS_ENABLED | false；Windows 通知开关 |
@@ -81,15 +85,15 @@ Trace：`backend/logs/ollama_trace.jsonl`。可能含私人 Topic、原文和模
 
 ## 日常使用
 
-1. 创建 Topic，描述主要关注需求，逐条添加包含与排除条件。
-2. 阈值默认 0.80，表示 AI 估计符合度达到 80%；它不是客观概率、准确率或传播热度。
-3. 点击“一键更新”，查看实际查询和每阶段数量；每轮最多分析 20 条待处理、失败或配置过期 Item。
-4. 只有 `score >= threshold` 且 `exclusion_status=not_excluded` 才有效；uncertain 或明确规则冲突进入待复核。
-5. 查看 Item 的理由与原始 metadata；无效内容仍保留，可手动重新分析。来源身份未知时不能仅凭频道名认定官方/粉丝。
-6. 在简报页阅读中文简报与来源快照。默认从最高符合度、较新的有效内容中选最多 15 条，整合成最多 10 单元。
-7. 高级操作可独立扫描、分析待处理或过期内容、生成简报。显式手动生成会保存新快照；自动流程仅在有效输入指纹改变时生成。
+1. 创建 Topic，填写自然语言描述、包含/排除条件、阈值和启用状态。复杂规则与未知来源身份可能进入待复核。
+2. 点击“一键更新”。新版每轮最多处理3条待处理记录，依次保存规范化、匹配、事件、简讯和报告；有积压时再次运行。刷新后可恢复最近一次实际运行阶段及统计，不显示虚构进度百分比。
+3. 在“精准关注”阅读符合当前启用 Topic 规则的 Brief，可按最新、相关性、真实 YouTube 热度或事件更新排序，展开匹配理由。
+4. 在“开放发现”浏览已采集事件库的不同主题、来源。该入口独立于精准过滤，不能当作全互联网推荐，不会修改 Topic 规则。
+5. 在事件详情查看来源声称、时间线、重要进展及 Brief 历史。重复报道增加来源，不重新生成；重要事实/冲突产生新版本。手动“重新生成”可重试降级内容。
+6. 阅读“综合简报”：多个有效 AI Brief 可生成 AI 综合简报；单条或模型失败显示程序简讯集合；成功检查但无新进展显示无更新报告。来源/数据库失败显示失败，不能当成“暂无新闻”。
+7. 每个已收录 Event 的事实指纹作为覆盖记录；没有新重要进展不会再次进入自动简报。“重新综合当前主题”显式绕过覆盖，仍严格校验当前 TopicMatch。
 
-同一 Topic 的更新、分析、规则编辑、删除与恢复使用进程内互斥，忙碌返回 409。进度是本次 NDJSON 响应，不是永久任务；断线后应刷新已保存结果再决定重试。
+旧单条 Analyze / ai_* 信息仍在高级操作中保留。它与 Task A/B/C 的事实规范化、TopicMatch 和事件流水线不是同一分析状态，不应混淆统计。模型符合度是估计值，不是客观概率、准确率或传播热度。
 
 ### 符合度与热度
 
@@ -105,7 +109,7 @@ Trace：`backend/logs/ollama_trace.jsonl`。可能含私人 Topic、原文和模
 
 `USE_MOCK_SOURCE=true` 时每个 query 返回 3 条稳定模拟内容；2 查询可返回 6 条，改变查询可能产生新的模拟 ID。它不是正式来源，内容和本地链接不代表真实新闻。MockSource 不模拟 AI，默认分析仍需要本地 Ollama。
 
-Scheduler 与手动更新使用同一 TopicUpdateService。安全试用时先保持关闭；开启后使用单个后端进程，不使用 reload 或多 worker。没有有效摘要输入变化时跳过自动简报；显式重新分析且结果未变也不会重复自动生成。EVENT_PROCESSING_ENABLED=false 时保留原 Digest 通知；开启后改用已持久化事件候选，重复报道不通知，通知不依赖 Digest 成功。错误只写日志。安全关闭：Ctrl+C → `SCHEDULER_ENABLED=false` → 重启。
+Scheduler 与手动更新复用 TopicUpdateService。默认 Scheduler 关闭；开启时使用单后端进程，不使用 reload 或多 worker。重复扫描复用规范化、匹配、事件和 Brief；仅新事件/重要增量生成可收录的内容。通知仍使用 Task B 持久化候选，重复来源不提醒，通知不依赖 Digest 成功；领取后中断可能漏发，不保证端到端 exactly-once。安全关闭：Ctrl+C → `SCHEDULER_ENABLED=false` → 重启。
 
 ### 删除与回收站
 
@@ -141,8 +145,8 @@ npm run build
 - AI 分数不是可靠性保证；8B 模型可能误判、超时或格式失败。语言/格式/指令漂移检查不能证明事实正确，也不能彻底消除 prompt injection。
 - 热度是 YouTube 内部启发式，不是跨来源的客观热榜。
 - Digest 整合与 EventResolver 均保守；事件关系无法确认时待复核，不强行合并，可能漏合并。
-- `(source, external_id)` 全局唯一，一个 Item 只归属一个 Topic，暂无多 Topic 关联。
-- 没有分页、持久化队列、跨进程锁、断线进度恢复、开机自启或休眠恢复。
+- `(source, external_id)` 全局唯一，Raw Item 保留最初采集 Topic；Task B/C 的匹配与 Event 可关联多个 Topic。
+- 没有分页、持久化任务队列、跨进程锁、自动断线续跑、开机自启或休眠恢复；已保存阶段可查看，重启后需主动重试。
 - 没有 Embedding、Vector DB、RAG 或新 AI Agent 框架。
 
 后续优先根据实际使用反馈改进可靠性、人工复核体验与分页，不将以上未实现功能标为完成。
@@ -150,7 +154,7 @@ npm run build
 
 ## Task A：单条智能简讯
 
-扫描得到 Item 后，在内容卡片的“AI 规范化简讯”点击“生成简讯”。已有同一原文/版本结果直接复用；“重新生成”显式产生新修订，旧记录保留。该能力与 Topic 相关性分析、Digest 分离，不会自动重新运行它们。
+扫描得到 Item 后，在内容卡片的“AI 规范化简讯”点击“生成简讯”。已有同一原文/版本结果直接复用；“重新生成”显式产生新修订，旧记录保留。这是独立入口；新版一键更新也会复用已保存的规范化结果，继续匹配、事件识别和 Brief。
 
 人物、机构、事件类型、事件日期、关键词、claims 与 warnings 随简讯保存。`reported` 只代表来源声称，当前不做官方核验或交叉验证，不允许模型标记 `officially_confirmed`。YouTube 明确为 metadata-only，不代表已观看视频；其他来源也只使用实际已有的 snippet。
 
@@ -163,7 +167,7 @@ npm run build
 
 确定性规则先检查主体—行为关系与明确字面条件，复杂自然语言交给 AI；来源身份无法核实时待复核。事件按实体索引/类型/时间选最多20候选，明确重复只增加来源；有可追溯新事实才创建 EventUpdate。冲突保留两边说法，不覆盖原事实、不升级官方确认。
 
-自动使用时设置 `EVENT_PROCESSING_ENABLED=true` 并重启，再按需启用 Scheduler / NOTIFICATIONS_ENABLED。默认关闭附加阶段以控制本地8B调用量，单条手动识别始终可用。通知先持久化领取再调用 Windows；失败或中断不自动重发，因此可能漏发，不能保证端到端 exactly-once。
+自动使用时设置 `EVENT_PROCESSING_ENABLED=true` 并重启，再按需启用 Scheduler / NOTIFICATIONS_ENABLED。Task C 起该事件流水线默认开启、每轮最多3条；已有 .env 若显式 false 需自行改为 true。单条手动识别仍可用。通知先持久化领取再调用 Windows；失败或中断不自动重发，因此可能漏发，不能保证端到端 exactly-once。
 
 可重复离线演示（Fake AI / Fake 通知，隔离数据库，不消耗 API 配额、不弹窗）：
 

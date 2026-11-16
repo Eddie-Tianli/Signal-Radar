@@ -34,8 +34,12 @@ def event_read(session,event,detail=False):
     if detail:
         data["facts"]=event.facts
         data["topic_matches"]=[{**match_read(match),"stale":match.config_fingerprint!=match_fingerprint(session.get(TopicRecord,match.topic_id))} for match in session.scalars(select(TopicMatchRecord).join(EventTopicRecord,EventTopicRecord.match_id==TopicMatchRecord.id).where(EventTopicRecord.event_id==event.id))]
-        data["sources"]=[{"id":source.id,"normalized_item_id":source.normalized_item_id,"reference":source.source_reference,"claims":source.claims} for source in sources]
+        data["sources"]=[{"id":source.id,"normalized_item_id":source.normalized_item_id,"reference":source.source_reference,"claims":source.claims,"created_at":source.created_at} for source in sources]
         data["updates"]=[{key:getattr(row,key) for key in ("id","normalized_item_id","update_type","new_facts","source_reference","importance","created_at")} for row in session.scalars(select(EventUpdateRecord).where(EventUpdateRecord.event_id==event.id).order_by(EventUpdateRecord.id.desc()))]
+        timeline=[{"at":event.created_at,"label":"事件首次记录（非事实核验时间）"}]
+        timeline.extend({"at":source.created_at,"label":"新来源报道："+(source.source_reference.get("author") or source.source_reference["source"])} for source in sources)
+        timeline.extend({"at":row["created_at"],"label":"冲突声称" if row["update_type"]=="conflict" else "重要新增声称" if row["importance"]>=.8 else "新增声称"} for row in data["updates"] if row["update_type"]!="new_event")
+        data["timeline"]=sorted(timeline,key=lambda point:str(point["at"]))
         data["decisions"]=[decision_read(row) for row in session.scalars(select(EventDecisionRecord).where(EventDecisionRecord.event_id==event.id).order_by(EventDecisionRecord.id))]
         data["notifications"]=[{key:getattr(row,key) for key in ("id","topic_id","event_update_id","status","reason","error","sent_at")} for row in session.scalars(select(EventNotificationRecord).where(EventNotificationRecord.event_id==event.id).order_by(EventNotificationRecord.id))]
     return data

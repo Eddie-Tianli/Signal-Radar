@@ -15,7 +15,7 @@ from app.scheduler.runner import run_cycle
 from app.main import app
 from test_scan import scan_client
 from test_items import engine
-from test_digests import FakeAI
+from test_reading import ReadingAI as FakeAI
 from test_scheduler import factory
 
 
@@ -29,15 +29,15 @@ def test_pipeline_stream_success_repeat_and_history(scan_client):
         response = client.post(path + "/update")
         assert response.status_code == 200
         events = [json.loads(line) for line in response.text.splitlines()]
-        assert [events[0]["stage"], events[1]["stage"]] == ["scan", "analyze"]
+        assert [events[0]["stage"], events[1]["stage"]] == ["scan", "normalize"]
         assert any(event["stage"] == "digest" for event in events)
         assert events[-1]["status"] == "completed"
         assert events[-1]["created"] == 2 and events[-1]["processed"] == 2
         assert events[-1]["digest"]["topic_id"] == topic
         again = [json.loads(line) for line in client.post(path + "/update").text.splitlines()][-1]
-        assert again["processed"] == 0 and again["duplicates"] == 2 and again["digest"] is None
-        assert len(client.get(path + "/digests").json()) == 1
-        assert len(provider.analyses) == 2
+        assert again["processed"] == 0 and again["duplicates"] == 2 and again["digest"]["result_kind"]=="no_updates"
+        assert len(client.get(path + "/digests").json()) == 2
+        assert len(provider.normalizations) == 2
         assert client.post("/api/topics/999/update").status_code == 404
     finally:
         app.dependency_overrides.pop(get_ai_provider, None)
@@ -49,22 +49,22 @@ def test_partial_digest_failure_is_recoverable_without_reanalysis(engine):
     with Session(engine) as session:
         service = TopicUpdateService(session, MockSource(), provider)
         result = list(service.run(1))[-1]
-        assert result.status == "partial" and result.failed_stage == "digest"
-        assert result.completed_steps == ["scan", "analyze"] and result.processed == 3
+        assert result.digest.result_kind=="brief_collection" and result.digest.generation_error
+        assert "brief" in result.completed_steps and result.processed == 3
         provider.fail = False
         recovered = list(service.run(1))[-1]
-        assert recovered.status == "completed" and recovered.digest is not None
-        assert recovered.processed == 0 and len(provider.analyses) == 3
-        assert list(service.run(1))[-1].digest is None
+        assert recovered.status == "completed" and recovered.digest.result_kind=="no_updates"
+        assert recovered.processed == 0 and len(provider.normalizations) == 3
+        assert list(service.run(1))[-1].digest.result_kind=="no_updates"
 
 
 def test_unavailable_ollama_reports_scan_success_and_analysis_failure(engine):
     class Offline(FakeAI):
-        def analyze(self, data):
+        def normalize(self, data):
             raise AIError("Cannot connect to local Ollama. Check that it is running.", 503)
     with Session(engine) as session:
         result = list(TopicUpdateService(session, MockSource(), Offline()).run(1))[-1]
-        assert result.status == "partial" and result.failed_stage == "analyze"
+        assert result.status == "partial" and result.failed_stage == "normalize"
         assert result.created == 3 and result.failed == 1 and result.pending_remaining == 3
         assert result.digest is None
 
@@ -109,9 +109,9 @@ def test_scheduler_skips_manual_active_topic(engine, caplog):
     provider = FakeAI()
     with topic_operation(1):
         assert run_cycle(factory(engine, provider))
-    assert provider.analyses == []
+    assert provider.normalizations == []
     assert run_cycle(factory(engine, provider))
-    assert len(provider.analyses) == 3
+    assert len(provider.normalizations) == 3
 
 
 def test_stale_cleanup_does_not_release_new_owner():
@@ -150,3 +150,8 @@ def test_database_unavailable_is_sanitized(monkeypatch, caplog):
     assert result.status_code == 503
     assert result.json()["detail"] == "Database operation failed. Check the local database."
     assert "SECRET" not in result.text and "SECRET" not in caplog.text
+
+
+@pytest.fixture(autouse=True)
+def enable_reading_pipeline(monkeypatch):
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED","true")

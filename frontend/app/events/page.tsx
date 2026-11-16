@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState,useRef} from "react";
 import {listEvents,getEvent,listTopics,type EventSummary,type EventDetail,type Topic} from "../topics/api";
+import EventBriefPanel from "./EventBriefPanel";
 import {formatTime} from "../DigestArticle";
 const states={active:"活跃",developing:"持续更新",closed:"已结束"};
 const claimNames:Record<string,string>={reported:"来源声称（未核验）",unconfirmed:"尚未确认",conflicting:"存在冲突",unknown:"无法确定"};
@@ -24,6 +25,8 @@ export default function EventsPage(){
     </section><section aria-label="事件详情" className="min-w-0 rounded-xl border border-line bg-surface p-5 lg:p-7">
       {reading?<p className="empty">正在读取详情…</p>:detailError?<p role="alert" className="notice">{detailError}</p>:!detail?<p className="empty">选择一个事件，查看来源、更新和判断依据。</p>:<div className="space-y-6 break-words">
         <header><span className="badge">{states[detail.event_status]}</span><h2 className="mt-3 text-xl font-semibold leading-8">{detail.canonical_title}</h2><p className="mt-2 text-xs text-muted">事件日期 {detail.event_date||"未确定"} · {detail.primary_entities.join("、")} · {detail.source_count} 个原始链接</p></header>
+        <EventBriefPanel key={detail.id} eventId={detail.id}/>
+        <div><h3 className="font-semibold">事件时间线</h3><ol className="mt-3 space-y-3">{detail.timeline?.map((point,index)=><li key={index} className="border-l-2 border-accent/30 pl-4 text-sm leading-7"><span className="text-xs text-muted">{formatTime(point.at)}</span><p>{point.label}</p></li>)}</ol></div>
         <div><h3 className="font-semibold">规范化摘要</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-7">{detail.summary}</p><p className="mt-2 text-xs text-muted">AI 整理 / 来源声称，未独立核验。来源增加不等于官方确认。</p></div>
         <div><h3 className="font-semibold">已记录的事实与不确定声称</h3><ul className="mt-3 space-y-3">{detail.facts.map((fact,index)=><li key={index} className="text-sm leading-7"><span className="badge mr-2">{claimNames[fact.status]||"未知状态"}</span>{fact.text}</li>)}</ul></div>
         <div><h3 className="font-semibold">来源列表</h3><ul className="mt-3 space-y-3">{detail.sources.map(source=><li key={source.id} className="rounded-lg border border-line p-3 text-sm"><p>{source.reference.headline} · {source.reference.source}</p><p className="mt-1 text-xs text-muted">Item #{source.reference.item_id} · 规范化 #{source.normalized_item_id??"原记录已删除，保留快照"} · {source.reference.author||"作者未知"}</p>{/^https?:\/\//i.test(source.reference.url)&&<a className="text-link mt-2 inline-block text-xs" href={source.reference.url} target="_blank" rel="noopener noreferrer">查看原文（新标签页）↗</a>}<details className="mt-2 text-xs"><summary>该来源的声称</summary>{source.claims.map((claim,index)=><p key={index} className="mt-1 leading-6">{claimNames[claim.status]||claim.status}：{claim.text}</p>)}</details></li>)}</ul></div>

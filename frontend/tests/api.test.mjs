@@ -127,3 +127,20 @@ test("event processing, semantic retry and event reads use additive endpoints", 
     ["http://127.0.0.1:8000/api/events/9",undefined],
   ]);
 });
+
+
+test("reading modes, Brief history and explicit recomposition keep independent endpoints",async()=>{
+ const calls=[];const service=api(async(url,options)=>{calls.push([url,options.method]);return new Response(JSON.stringify({}));});
+ await service.readFeed("focus",7,"relevance");await service.readFeed("discover");
+ await service.generateBrief(3,true);await service.briefHistory(3);await service.markBriefRead(8);
+ await service.generateDigest(7,undefined,true);await service.readingStatus(7);
+ assert.deepEqual(calls,[
+ ["http://127.0.0.1:8000/api/feed?mode=focus&sort=relevance&topic_id=7",undefined],
+ ["http://127.0.0.1:8000/api/feed?mode=discover&sort=latest",undefined],
+ ["http://127.0.0.1:8000/api/events/3/brief?force=true","POST"],
+ ["http://127.0.0.1:8000/api/events/3/brief-history",undefined],
+ ["http://127.0.0.1:8000/api/briefs/8/read","POST"],
+ ["http://127.0.0.1:8000/api/topics/7/digest?force=true","POST"],
+ ["http://127.0.0.1:8000/api/topics/7/reading-status",undefined],
+ ]);
+});

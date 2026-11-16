@@ -110,7 +110,8 @@ def test_restore_and_permanent_delete_respect_topic_lock(scan_client):
     assert len(client.get("/api/trash").json()["items"]) == 1
 
 
-def test_update_skips_trashed_unanalyzed_items(scan_client):
+def test_update_skips_trashed_unanalyzed_items(scan_client, monkeypatch):
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED", "true")
     client, _ = scan_client
     provider = FakeAI()
     app.dependency_overrides[get_ai_provider] = lambda: provider
@@ -122,9 +123,9 @@ def test_update_skips_trashed_unanalyzed_items(scan_client):
             client.delete(f"/api/items/{item['id']}").raise_for_status()
         import json
         events = [json.loads(line) for line in client.post(base + "/update").text.splitlines()]
-        assert events[-1]["status"] == "completed"
+        assert events[-1]["status"] == "completed", json.dumps(events[-1], ensure_ascii=True)
         assert events[-1]["processed"] == events[-1]["pending_remaining"] == 0
-        assert events[-1]["digest"] is None
+        assert events[-1]["digest"]["result_kind"]=="no_updates"
         assert not provider.analyses and not provider.inputs
     finally:
         app.dependency_overrides.pop(get_ai_provider, None)
@@ -142,7 +143,7 @@ def test_0004_upgrade_preserves_content_and_matches_metadata(engine):
         connection.execute(text("INSERT INTO items (topic_id, source, external_id, title, url, ai_summary) VALUES (1, 'test', 'old', 'Original', 'https://example.com', 'Saved AI summary')"))
         connection.execute(text("INSERT INTO digests (topic_id, title, summary, item_count) VALUES (1, 'Saved brief', 'Original brief', 1)"))
         command.upgrade(config, "head")
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
         assert connection.execute(text("SELECT title, ai_summary, deleted_at FROM items")).one() == ("Original", "Saved AI summary", None)
         assert connection.execute(text("SELECT summary, deleted_at FROM digests")).one() == ("Original brief", None)
         for table in ("items", "digests"):

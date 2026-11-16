@@ -3,23 +3,19 @@
 ```text
 Scheduler / 一键更新 / 手动操作
 ↓
-Topic (description / include_rules / exclude_rules / threshold)
+Topic → Query Builder → Collection Service → SourceAdapter
 ↓
-Query Builder → Collection Service → SourceAdapter (YouTubeSource / MockSource)
+Raw Item → Text Preprocessing → NormalizedItem
 ↓
-Raw Item → PostgreSQL
+TopicMatcher（当前规则指纹）→ Event Resolution → Event / EventUpdate
 ↓
-AIProvider → OllamaProvider → Structured Analysis
+Brief Service → AIProvider / OllamaProvider → Brief / BriefVersion
 ↓
-统一 policy（valid / invalid / review / failed，配置指纹）
+Report Service → 多 Brief 综合 / 程序简讯集合 / 无更新报告
 ↓
-有效摘要 → Conservative Consolidation → Information Units
-↓
-Digest Service → AIProvider → 中文 Final Digest + 程序来源快照
-↓
-PostgreSQL → Frontend
-↓
-可选 Windows Notification（仅自动任务且发现新有效内容、保存新 Digest）
+PostgreSQL → Frontend（精准关注 / 开放发现 / 事件 / 报告历史）
+
+EventUpdate → 持久化通知候选 → 可选 Windows Notification
 ```
 
 ## Topic 与配置指纹
@@ -89,11 +85,11 @@ Digest.sources 保存 Item ID、unit_id、title、source、URL、author、publis
 
 ## 一键更新、Scheduler 与互斥
 
-TopicUpdateService 统一 Scan → 选择最多 20 条 pending / failed / 配置过期内容 → 顺序分析 → 有效性 → 整合 → 按输入变化生成 Digest。批量 Analyze 最多 10 条，同样复用 pending_condition / AnalysisService；单条允许主动重分析。
+旧版 TopicUpdateService 曾使用 Scan → 最多20条单条分析 → 有效性 → 整合 → Digest；Task C 主流程已由本文末尾的新编排替代。批量 Analyze 最多 10 条，同样复用 pending_condition / AnalysisService；单条允许主动重分析。
 
 每条分析成功/失败状态独立提交；服务不可用/超时（503/504）停止本轮更多模型调用并跳过 Digest，其他失败不会撤销已完成数据。NDJSON 提供实际阶段、数量、review、queries 和 warnings，HTTP 200 只表示进度流开始。没有永久后台队列，断线进度不恢复。
 
-Scheduler 默认关闭，FastAPI lifespan 按环境启动并关闭，用标准库单轮 job_lock 避免重叠；同 Topic 手动/自动/规则编辑/回收站写操作共用进程锁。单 Topic 异常不影响其他 Topic。没有新有效摘要不自动生成，通知失败不影响已保存简报。
+Scheduler 默认关闭，FastAPI lifespan 按环境启动并关闭，用标准库单轮 job_lock 避免重叠；同 Topic 手动/自动/规则编辑/回收站写操作共用进程锁。单 Topic 异常不影响其他 Topic。没有新的有效事件事实不自动综合，通知失败不影响已保存简报。
 
 ## UI、Dashboard、日志与回收站
 
@@ -161,7 +157,7 @@ Raw Item → NormalizationService → ItemNormalizationRecord
                  NotificationService → Windows
 ```
 
-原有 Analyze→Digest 支线继续保留，Task B 不重写 Digest。自动事件阶段在既有一键更新的 Analyze 后、Digest 前执行；附加阶段默认关闭，开启每轮最多3条，单条API独立可用。手动与Scheduler调用同一 EventPipeline，旧历史可逐条补充，不强制全量回填。
+Task B 时曾保留 Analyze→Digest 支线并默认关闭额外事件阶段；Task C 已改为默认开启的 Event→Brief→Report 主流程，每轮最多3条。旧Analyze API仍独立保留。手动与Scheduler调用同一 EventPipeline，旧历史可逐条补充，不强制全量回填。
 
 TopicMatcher：仅明确“排除关键词：X / 禁止包含：X”和“必须包含关键词：X”采用字面硬规则；自然语言主旨/身份规则不做简单提及排除。简单无额外限制时需标题和声称存在直接主体—行为关系；复杂描述、规则或关系进入AI，身份无法核验时强制uncertain，阈值由程序最后判断。内置少量公开名称别名，不是通用实体链接器。配置指纹使旧匹配失效，审计保留依据/AI参与/失败。
 
@@ -176,3 +172,26 @@ EventUpdate按(event_id,fact_fingerprint)唯一，重复事实不新增，report
 Topic锁沿用；额外全局单进程Event锁避免不同Topic同时创建同一事件，数据库唯一约束兜底。不支持多worker/分布式锁。旧来源软删除不抹除已保存事件历史，永久删除Raw仍留来源快照；Topic删除移除关联/通知，跨Topic共享事件和来源快照保留。
 
 多Topic扫描同一链接时，ScanResult.item_ids携带实际发现的既有Item ID，EventPipeline复用其简讯按当前Topic匹配。仍不复制Raw；跨采集归属时额外领取原归属Topic锁，避免与进行中的规范化任务重入。0009保存匹配时的Topic配置快照，Event详情可回查过期规则。
+
+
+## Task C：统一阅读链路（当前实现）
+
+Raw Item 保留采集原文；NormalizedItem 是单条资料的结构化声称；Event 合并现实事件的多个来源；Brief 是一个 Event 的中文阅读单元；Digest 是多个有效 Brief 的综合结果。旧 Item Analyze API 及历史 ai_* 仍保留，新的一键更新不先运行旧单条 Analyze，也不把其摘要直接送入 Digest。下文较早的单条分析与 Conservative Consolidation 描述用于独立高级功能与历史兼容；当前报告入口使用 ReportService。
+
+Brief 首次生成，以及 importance >= 0.8 的重要进展/冲突时生成新版本。事实最多20条（超过时保留最初5条和最新15条），输入事实指纹相同即复用，包括已标注的程序降级版本。仅增加重复来源或小幅更新不重复调用模型；来源仍可查看。显式 force 可重试并保留历史版本，不伪装成新事件。
+
+AI Prompt 将资料作为不可信引用，禁止执行来源指令、解释用户意图、虚构时间数字和来源；没有全文时明确 limited_metadata。Brief 输出绑定实际 fact_indices；综合输出绑定每个 brief_id，必须恰好覆盖所有输入一次。程序还检查中文、任务漂移、数字证据、实体锚点和冲突表述。该校验超出关键词黑名单，但仍是保守启发式，不是事实核验、通用蕴含证明或完全 prompt injection 防护。来源多不代表官方证实；目前只标记 unverified / conflicting，不自动升级 verified。
+
+ReportService 按当前启用 Topic 的有效 TopicMatch、最新规范化、阈值和未删除原始来源选 Brief；支持时间/事件状态限制。覆盖记录包含 Event ID 与事实指纹，已收录无增量内容排除（回收站报告仍算覆盖）。最多 DIGEST_MAX_EVENTS（默认10，上限20），AI 输入预算11KB，减少完整事件而不是切断事实。至少2条 AI 完成简讯才调用综合模型；temperature=0、stream=false、JSON Schema、最多一次解析/语义重试与 Trace。
+
+三种报告独立持久化：digest 为 AI 综合成功；brief_collection 为少量事件、模板 Brief、超预算或模型失败时的程序集合；no_updates 为成功检查后没有未收录的重要有效事件。待处理或失败未消除时禁止生成虚假的无更新报告；采集/数据库错误单独失败，已有 Raw/规范化/简讯保留。单独手动生成且未扫描时明确 scan_performed=false，不声称完成扫描。
+
+## 精准关注与开放发现
+
+精准关注严格复核当前规则指纹、匹配状态/阈值、最新规范化与有效原始来源；热度只影响排序，不绕过排除条件。规则更改使旧匹配退出精准流，重新匹配后才能进入。
+
+开放发现是独立入口，只使用当前已采集且有可读 Brief 的事件库，不强制当前 Topic 过滤。采用近期性、跨主题/事件类型覆盖、按日期稳定的小幅探索扰动、已读降权和主要来源 author/hostname 配额（每列表最多2条）。同事件只出现一次，所有实际来源可展开。此策略不判断观点、不制造对立，也不能证明来源独立性；候选最多200个最近更新事件，不是全库分页或全网发现。
+
+## 持久化运行状态和本机约束
+
+TopicUpdateService 是手动一键更新与 Scheduler 的唯一主编排；每轮最多3条待处理资料，规则/版本过期可再处理，已完成部分复用。reading_runs 在实际阶段开始前保存 scan / normalize / match / events / brief / digest，保存完成/部分完成/失败和报告ID。没有后台队列或自动断点续跑，断线/重启后展示保存记录，不能宣称任务仍在执行；下一轮标记遗留 running 为 interrupted。Topic锁和事件/Brief锁防止单进程重入；不支持多 worker 的分布式协调。Scheduler与事件通知去重策略保留 Task B 行为。

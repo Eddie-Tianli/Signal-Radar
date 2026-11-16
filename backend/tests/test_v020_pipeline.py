@@ -89,7 +89,8 @@ def test_program_validity_independent_of_ai_boolean(engine, status, score, expec
             result = super().analyze(data)
             return result.model_copy(update={"relevance_score": score, "relevant": expected != "valid"})
     with Session(engine) as session:
-        list(TopicUpdateService(session, MockSource(), Provider(exclusion_status=status, exclusion_reason="排除判断证据" if status != "not_excluded" else "")).run(1))
+        CollectionService(session,MockSource()).scan(1)
+        AnalysisService(session,Provider(exclusion_status=status,exclusion_reason="排除判断证据" if status!="not_excluded" else "")).analyze_topic(1,10)
         records = list(session.scalars(select(ItemRecord)))
         assert len(records) == 3
         assert all(row.analysis_status == expected for row in records)
@@ -98,26 +99,22 @@ def test_program_validity_independent_of_ai_boolean(engine, status, score, expec
 
 
 def test_rule_change_stale_reanalysis_and_unchanged_digest(engine):
-    provider = FakeAI()
+    provider=FakeAI()
     with Session(engine) as session:
-        service = TopicUpdateService(session, MockSource(), provider)
-        first = list(service.run(1))[-1]
-        assert first.digest is not None and first.processed == 3
-        assert list(service.run(1))[-1].digest is None
-        topic = session.get(TopicRecord, 1)
-        topic.rules.append(TopicRuleRecord(rule_type="exclude", text="主要讨论旧版本", enabled=True))
-        session.commit()
-        old_item = session.scalar(select(ItemRecord))
-        assert Item.model_validate(old_item).analysis_stale
-        assert Item.model_validate(old_item).analysis_status == "pending"
-        assert list(session.scalars(DigestService(session, provider).eligible(1))) == []
-        updated = list(service.run(1))[-1]
-        assert updated.processed == 3 and updated.digest
+        CollectionService(session,MockSource()).scan(1)
+        assert AnalysisService(session,provider).analyze_topic(1,10).processed==3
+        legacy=DigestService(session,provider);legacy.generate(1)
+        assert not legacy.needs_generation(1)
+        topic=session.get(TopicRecord,1)
+        topic.rules.append(TopicRuleRecord(rule_type="exclude",text="主要讨论旧版本",enabled=True));session.commit()
+        old_item=session.scalar(select(ItemRecord))
+        assert Item.model_validate(old_item).analysis_stale and not list(session.scalars(legacy.eligible(1)))
+        assert AnalysisService(session,provider).analyze_topic(1,10).processed==3
+        legacy.generate(1)
         assert all("主要讨论旧版本" in data.exclude_rules for data in provider.analyses[-3:])
         assert not Item.model_validate(old_item).analysis_stale
-        # Explicit reanalysis with identical results is not new information.
-        AnalysisService(session, provider).analyze(old_item.id)
-        assert not DigestService(session, provider).needs_generation(1)
+        AnalysisService(session,provider).analyze(old_item.id)
+        assert not legacy.needs_generation(1)
 
 
 def test_conflicting_rules_review_and_provider_failure(engine):
@@ -126,8 +123,9 @@ def test_conflicting_rules_review_and_provider_failure(engine):
         topic = session.get(TopicRecord, 1)
         topic.rules.extend([TopicRuleRecord(rule_type=kind, text="官方", enabled=True) for kind in ("include", "exclude")])
         session.commit()
-        result = list(TopicUpdateService(session, MockSource(), provider).run(1))[-1]
-        assert result.review == 3 and result.digest is None
+        CollectionService(session,MockSource()).scan(1)
+        result=AnalysisService(session,provider).analyze_topic(1,10)
+        assert result.review==3 and not DigestService(session,provider).needs_generation(1)
         assert all(row.exclusion_status == "uncertain" for row in session.scalars(select(ItemRecord)))
         class Offline(Judgement):
             def analyze(self, data):
@@ -172,7 +170,8 @@ def test_consolidation_conservative_and_traceable():
 def test_digest_valid_only_provenance_snapshot_and_input_budget(engine):
     with Session(engine) as session:
         provider = FakeAI()
-        list(TopicUpdateService(session, MockSource(), provider).run(1))
+        CollectionService(session,MockSource()).scan(1)
+        AnalysisService(session,provider).analyze_topic(1,10)
         digest = DigestService(session, provider).generate(1)
         assert digest.sources and len(digest.sources) == digest.item_count == 3
         assert "snippet" not in provider.inputs[-1].model_dump_json()
@@ -229,12 +228,13 @@ def test_partial_query_failure_keeps_discovered_items(engine):
         assert len(calls) == 3
 
 
-def test_scheduler_uses_same_review_policy_and_preserves_invalid(engine):
+def test_batch_analysis_uses_same_review_policy_and_preserves_invalid(engine):
     from test_scheduler import factory
     from app.scheduler.runner import run_cycle
     provider = Judgement(exclusion_status="uncertain", exclusion_reason="频道名不能确认官方身份")
-    assert run_cycle(factory(engine, provider))
     with Session(engine) as session:
+        CollectionService(session,MockSource()).scan(1)
+        AnalysisService(session,provider).analyze_topic(1,10)
         rows = list(session.scalars(select(ItemRecord)))
         assert len(rows) == 3 and all(row.analysis_status == "review" for row in rows)
         assert not provider.inputs
@@ -275,7 +275,9 @@ def test_spa_fragments_and_similar_but_opposite_titles_not_merged():
 def test_score_only_jitter_not_new_digest(engine):
     with Session(engine) as session:
         provider = FakeAI()
-        list(TopicUpdateService(session, MockSource(), provider).run(1))
+        CollectionService(session,MockSource()).scan(1)
+        AnalysisService(session,provider).analyze_topic(1,10)
+        DigestService(session,provider).generate(1)
         item = session.scalar(select(ItemRecord))
         item.ai_relevance_score = .99
         item.ai_category = "slightly_different_category"
@@ -380,7 +382,8 @@ def test_dashboard_observes_stale_and_failed_analysis(scan_client):
     try:
         topic = client.post("/api/topics", json={"name": "Topic"}).json()["id"]
         base = f"/api/topics/{topic}"
-        client.post(base + "/update").raise_for_status()
+        client.post(base + "/scan").raise_for_status()
+        client.post(base + "/analyze").raise_for_status()
         assert client.get("/api/dashboard").json()["topics"][0]["analysis_state"] == "completed"
         client.put(base, json={"name":"Topic","relevance_threshold":.95}).raise_for_status()
         data = client.get("/api/dashboard").json()
@@ -414,7 +417,8 @@ def test_unsupported_fact_not_saved_as_valid_and_error_survives_reload(engine):
 def test_failed_reanalysis_does_not_relabel_historical_summary_as_current(engine):
     with Session(engine) as session:
         provider = FakeAI()
-        list(TopicUpdateService(session, MockSource(), provider).run(1))
+        CollectionService(session,MockSource()).scan(1)
+        AnalysisService(session,provider).analyze_topic(1,10)
         item = session.scalar(select(ItemRecord))
         previous_fingerprint, previous_summary = item.analysis_fingerprint, item.ai_summary
         topic = session.get(TopicRecord, 1)
@@ -441,32 +445,29 @@ def test_item_summary_language_and_instruction_guards(summary):
         validate_analysis(result,data)
 
 
-def test_pipeline_timeout_stops_repeating_model_failure(engine):
-    class Timeout(FakeAI):
-        def analyze(self,data):
-            self.analyses.append(data)
+def test_pipeline_timeout_stops_repeating_model_failure(engine,monkeypatch):
+    from test_reading import ReadingAI
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED","true")
+    class Timeout(ReadingAI):
+        def normalize(self,data):
+            self.normalizations.append(data)
             raise AIError("Ollama analysis timed out. Try one Item again.",504)
-    provider = Timeout()
+    provider=Timeout()
     with Session(engine) as session:
-        result = list(TopicUpdateService(session,MockSource(),provider).run(1))[-1]
-        assert len(provider.analyses) == 1 and result.failed == 1 and result.pending_remaining == 3
-        assert result.status == "partial" and result.digest is None
+        result=list(TopicUpdateService(session,MockSource(),provider).run(1))[-1]
+        assert len(provider.normalizations)==1 and result.failed==1 and result.pending_remaining==3
+        assert result.failed_stage=="normalize" and result.digest is None
 
 
-def test_unavailable_analysis_does_not_repeat_call_in_digest_stage(engine):
+def test_unavailable_analysis_does_not_repeat_call_in_digest_stage(engine,monkeypatch):
+    from test_reading import ReadingAI
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED","true")
+    class Offline(ReadingAI):
+        def normalize(self,data):raise AIError("Cannot connect to local Ollama. Check that it is running.",503)
     with Session(engine) as session:
-        provider = FakeAI()
-        CollectionService(session,MockSource()).scan(1)
-        AnalysisService(session,provider).analyze_topic(1,10)
-        session.add(ItemRecord(topic_id=1,source="mock",external_id="new-pending",title="New pending",url="http://localhost/item/new"))
-        session.commit()
-        class Offline(FakeAI):
-            def analyze(self,data):
-                raise AIError("Cannot connect to local Ollama. Check that it is running.",503)
-        offline = Offline()
-        result = list(TopicUpdateService(session,MockSource(),offline).run(1))[-1]
-        assert result.digest_skipped == "analysis_unavailable" and not offline.inputs
-        assert result.status == "partial" and result.failed_stage == "analyze"
+        result=list(TopicUpdateService(session,MockSource(),Offline()).run(1))[-1]
+        assert result.digest_skipped=="processing_incomplete" and result.digest is None
+        assert result.status=="partial" and result.failed_stage=="normalize"
 
 
 @pytest.mark.parametrize("text", ["OpenAI 的进展已整理。[u99]", "OpenAI 的进展见 https://invented.example/news 。"])

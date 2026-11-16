@@ -27,7 +27,7 @@ def event_operation():
     finally:_guard.release()
 
 
-def event_processing_enabled():return os.getenv("EVENT_PROCESSING_ENABLED","false").strip().lower()=="true"
+def event_processing_enabled():return os.getenv("EVENT_PROCESSING_ENABLED","true").strip().lower()=="true"
 
 
 def match_read(row):
@@ -42,11 +42,12 @@ def decision_read(row):
 class EventPipeline:
     def __init__(self,session,provider):self.session,self.provider=session,provider
 
-    def process_item(self,item_id,topic_ids=None,retry=False,locked_topic_id=None):
+    def process_item(self,item_id,topic_ids=None,retry=False,locked_topic_id=None,on_stage=None):
         item=self.session.get(ItemRecord,item_id)
         if item is None or item.deleted_at is not None:raise LookupError("Item not found")
         owner_lock=topic_operation(item.topic_id) if item.topic_id!=locked_topic_id else nullcontext()
         with owner_lock,event_operation():
+            if on_stage:on_stage("normalize")
             normalized=NormalizationService(self.session,self.provider).normalize(item_id)
             row=self.session.get(ItemNormalizationRecord,normalized.id)
             query=select(TopicRecord).order_by(TopicRecord.id)
@@ -54,10 +55,12 @@ class EventPipeline:
             else:query=query.where(TopicRecord.id.in_(topic_ids))
             topics=list(self.session.scalars(query.limit(51)))
             if len(topics)>50:raise AIError("单次最多匹配50个主题，请指定 Topic 分批处理。",422)
+            if on_stage:on_stage("match")
             matches=[TopicMatcher(self.session,self.provider).match(topic,row,retry) for topic in topics]
             matched=[match for match in matches if match.match_status=="matched"]
             decision=None;update=None;notifications=[]
             if matched:
+                if on_stage:on_stage("events")
                 decision,update=EventResolver(self.session,self.provider).resolve(row,retry)
                 if decision.event_id:
                     for match in matched:
@@ -78,8 +81,16 @@ class EventPipeline:
                                 self.session.add(existing);self.session.flush()
                             notifications.append(existing.id)
                     self.session.commit()
+            if decision and decision.event_id and on_stage:on_stage("brief")
             return {"item_id":item_id,"normalized_item_id":row.id,"matches":[match_read(m) for m in matches],
-                "decision":decision_read(decision),"notification_candidates":notifications}
+                "decision":decision_read(decision),"notification_candidates":notifications,
+                "brief":self._brief(decision)}
+
+    def _brief(self,decision):
+        if decision and decision.event_id:
+            from app.briefs.service import BriefService
+            return BriefService(self.session,self.provider).ensure(decision.event_id)
+        return None
 
     def process_topic(self,topic_id,limit=3,stop=None,item_ids=None):
         if self.session.get(TopicRecord,topic_id) is None:raise LookupError("Topic not found")

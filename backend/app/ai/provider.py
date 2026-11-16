@@ -26,6 +26,12 @@ class AIProvider(ABC):
     def compare_event(self, data):
         raise AIError("当前 AIProvider 不支持事件关系核验。", 503)
 
+    def brief_event(self, data):
+        raise AIError("当前 AIProvider 不支持事件简讯。",503)
+
+    def compose_digest(self, data):
+        raise AIError("当前 AIProvider 不支持综合简报。",503)
+
     @abstractmethod
     def analyze(self, data: AnalysisInput) -> AnalysisResult:
         """Return validated analysis without database access."""

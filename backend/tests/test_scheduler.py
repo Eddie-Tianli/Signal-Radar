@@ -12,7 +12,7 @@ from app.scheduler.runner import run_cycle, job_lock
 from app.scheduler.lifecycle import configured_scheduler, LocalScheduler
 from app.scheduler.lifecycle import lifespan
 from test_items import engine
-from test_digests import FakeAI
+from test_reading import ReadingAI as FakeAI
 
 
 def factory(engine, provider, source=None):
@@ -30,21 +30,22 @@ def test_enabled_pipeline_and_no_change(engine):
         session.commit()
     resources = factory(engine, provider)
     assert run_cycle(resources)
-    assert len(provider.analyses) == 3 and len(provider.inputs) == 1
+    assert len(provider.normalizations) == 3 and len(provider.compositions) == 1
     assert run_cycle(resources)
-    assert len(provider.analyses) == 3 and len(provider.inputs) == 1
+    assert len(provider.normalizations) == 3 and len(provider.compositions) == 1
     with Session(engine) as session:
         assert len(list(session.scalars(select(ItemRecord)))) == 3
-        assert len(list(session.scalars(select(DigestRecord)))) == 1
-        assert all(item.ai_analyzed_at for item in session.scalars(select(ItemRecord)))
+        assert len(list(session.scalars(select(DigestRecord)))) == 2
+        from app.normalization.models import ItemNormalizationRecord
+        assert all(row.normalization_status=="completed" for row in session.scalars(select(ItemNormalizationRecord)))
 
 
 def test_irrelevant_skips_digest(engine):
     provider = FakeAI()
     provider.relevant = False
     run_cycle(factory(engine, provider))
-    assert len(provider.analyses) == 3
-    assert provider.inputs == []
+    assert len(provider.normalizations) == 3
+    assert provider.compositions == []
 
 
 def test_topic_failure_isolated(engine, caplog):
@@ -58,7 +59,7 @@ def test_topic_failure_isolated(engine, caplog):
         session.commit()
     provider = FakeAI()
     run_cycle(factory(engine, provider, Source()))
-    assert len(provider.inputs) == 1
+    assert len(provider.compositions) == 1
     assert "Topic 1 job failed" in caplog.text and "SECRET" not in caplog.text
 
 
@@ -96,7 +97,7 @@ def test_stopped_cycle_does_not_process_topics(engine):
     stop = Event()
     stop.set()
     run_cycle(factory(engine, provider), stop)
-    assert provider.analyses == []
+    assert provider.normalizations == []
 
 
 def test_lifespan_start_stop_without_background_thread(monkeypatch):
@@ -127,3 +128,8 @@ def test_configured_interval_without_starting(monkeypatch):
     monkeypatch.setenv("SCAN_INTERVAL_MINUTES", "nan")
     with pytest.raises(RuntimeError, match="SCAN_INTERVAL_MINUTES"):
         configured_scheduler()
+
+
+@pytest.fixture(autouse=True)
+def enable_reading_pipeline(monkeypatch):
+    monkeypatch.setenv("EVENT_PROCESSING_ENABLED","true")

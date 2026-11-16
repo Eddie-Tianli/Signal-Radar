@@ -163,10 +163,11 @@ export type DigestSource = { item_id: number; unit_id: string; title: string; so
 export type Digest = {
   id: number; topic_id: number; title: string; summary: string;
   item_count: number; generated_at: string; sources: DigestSource[] | null;
+  result_kind?:"legacy"|"digest"|"brief_collection"|"no_updates"; generation_status?:string; generation_error?:string|null; run_stats?:Record<string,unknown>|null; briefs?:BriefCardData[];
 };
 
-export async function generateDigest(id: number, signal: AbortSignal): Promise<Digest> {
-  return (await request(`/${id}/digest`, { method: "POST", signal }, 390000)).json();
+export async function generateDigest(id: number, signal?: AbortSignal, force=false): Promise<Digest> {
+  return (await request(`/${id}/digest${force?"?force=true":""}`, { method: "POST", signal }, 390000)).json();
 }
 
 export async function listDigests(id: number, signal: AbortSignal): Promise<Digest[]> {
@@ -175,10 +176,11 @@ export async function listDigests(id: number, signal: AbortSignal): Promise<Dige
 
 export type UpdateProgress = {
   topic_id: number; status: "running" | "completed" | "partial" | "failed";
-  stage: "scan" | "analyze" | "events" | "digest" | "complete";
+  stage: "scan" | "analyze" | "normalize" | "match" | "brief" | "events" | "digest" | "complete";
   completed_steps: string[]; fetched: number; created: number; duplicates: number;
   processed: number; relevant: number; irrelevant: number; review: number; failed: number; pending_remaining: number;
   queries: string[]; warnings: string[];
+  run_id?:number; briefs_generated?:number; brief_fallbacks?:number;
   event_mode?: boolean; events_processed?: number; event_relations?: Record<string,number>; event_failed?: number;
   digest: Digest | null; digest_skipped: string | null; error: string | null; failed_stage: string | null;
 };
@@ -271,7 +273,7 @@ export type EventDecision = { id:number; event_id:number|null; relation:"new_eve
 export type EventProcessing = { item_id:number; normalized_item_id:number; matches:TopicMatch[]; decision:EventDecision|null; complete?:boolean; stale_match_count?:number };
 export type EventSummary = { id:number; canonical_title:string; event_type:string; event_date:string|null; summary:string; primary_entities:string[]; event_status:"active"|"developing"|"closed"; created_at:string; updated_at:string; source_count:number; topics:{id:number;name:string;enabled:boolean}[] };
 export type EventDetail = EventSummary & {
-  facts:{text:string;status:string}[]; topic_matches:(TopicMatch&{stale:boolean})[];
+  timeline?:{at:string;label:string}[]; facts:{text:string;status:string}[]; topic_matches:(TopicMatch&{stale:boolean})[];
   sources:{id:number;normalized_item_id:number|null;reference:{item_id:number;url:string;source:string;author:string|null;headline:string};claims:{text:string;status:string}[]}[];
   updates:{id:number;update_type:string;new_facts:{text:string;status:string}[];importance:number;created_at:string;source_reference:{url:string;item_id:number}}[];
   decisions:EventDecision[];
@@ -290,3 +292,15 @@ export async function listEvents(topicId?:number,signal?:AbortSignal):Promise<Ev
 export async function getEvent(id:number,signal?:AbortSignal):Promise<EventDetail> {
   return (await request(`/events/${id}`,{signal},5000,rootApi)).json();
 }
+
+
+export type BriefCardData={id:number;event_id:number;version_id:number;version:number;content_fingerprint:string;title:string;summary:string;facts:{text:string;status:string}[];sources:BriefSource[];current_sources:BriefSource[];verification_status:string;generation_status:string;warnings:string[];model_name:string|null;error:string|null;published_at:string;updated_at:string;event_date:string|null;event_type:string;entities:string[];last_update_id:number;topics?:{topic_id:number;name:string;score:number;reason:string;matched_rules:string[]}[];relevance_score?:number|null;popularity_score?:number|null;event_status?:string;is_read?:boolean;has_update?:boolean;importance?:number};
+export type BriefSource={item_id:number;url:string;source:string;author?:string|null;headline?:string;published_at?:string|null};
+export type ReadingStatus={id:number;topic_id:number;status:string;stage:string;stats:Record<string,unknown>;error:string|null;report_id:number|null;started_at:string;finished_at:string|null;active:boolean};
+export async function readFeed(mode:"focus"|"discover",topicId?:number,sort="latest",signal?:AbortSignal):Promise<{mode:string;cards:BriefCardData[];scope:string}>{return (await request(`/feed?mode=${mode}&sort=${sort}${topicId?`&topic_id=${topicId}`:""}`,{signal},10000,rootApi)).json();}
+export async function readBrief(eventId:number,signal?:AbortSignal):Promise<BriefCardData|null>{return (await request(`/events/${eventId}/brief`,{signal},5000,rootApi)).json();}
+export async function generateBrief(eventId:number,force=false):Promise<BriefCardData>{return (await request(`/events/${eventId}/brief?force=${force}`,{method:"POST"},390000,rootApi)).json();}
+export async function briefHistory(eventId:number,signal?:AbortSignal):Promise<BriefCardData[]>{return (await request(`/events/${eventId}/brief-history`,{signal},5000,rootApi)).json();}
+export async function markBriefRead(briefId:number):Promise<void>{await request(`/briefs/${briefId}/read`,{method:"POST"},5000,rootApi);}
+export async function readingStatus(topicId:number,signal?:AbortSignal):Promise<ReadingStatus|null>{return (await request(`/${topicId}/reading-status`,{signal},5000)).json();}
+export async function readingOverview(signal?:AbortSignal):Promise<{recent_briefs:BriefCardData[];discovery:BriefCardData[];review_count:number;event_count:number;brief_count:number;scope:string}>{return (await request("/reading-overview",{signal},10000,rootApi)).json();}
